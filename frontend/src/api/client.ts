@@ -1,0 +1,324 @@
+/// <reference types="vite/client" />
+import axios from 'axios'
+import type { components } from './generated'
+
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? ''
+const USER_STORAGE_KEY = 'knowledge_mind_user_config'
+
+function getAuthHeaders(): Record<string, string> {
+  if (!API_KEY) return {}
+  // Backend accepts either Bearer token or X-API-Key header
+  return { Authorization: `Bearer ${API_KEY}` }
+}
+
+interface StoredUserConfig {
+  userId?: string
+  roles?: string[]
+  department?: string
+}
+
+function getUserHeaders(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as StoredUserConfig
+    const headers: Record<string, string> = {}
+    if (parsed.userId) headers['X-User-ID'] = parsed.userId
+    if (parsed.department) headers['X-User-Department'] = parsed.department
+    if (parsed.roles?.length) headers['X-User-Roles'] = parsed.roles.join(',')
+    return headers
+  } catch {
+    return {}
+  }
+}
+
+const api = axios.create({
+  baseURL: '/api/v1',
+  timeout: 60000,
+})
+
+api.interceptors.request.use((config) => {
+  const authHeaders = getAuthHeaders()
+  const userHeaders = getUserHeaders()
+  Object.entries({ ...authHeaders, ...userHeaders }).forEach(([key, value]) => {
+    config.headers.set(key, value)
+  })
+  return config
+})
+
+export function extractErrorMessage(err: unknown, fallback = '请求失败'): string {
+  if (err && typeof err === 'object') {
+    const error = err as { response?: { data?: { detail?: string } }; message?: string }
+    if (error.response?.data?.detail) {
+      return error.response.data.detail
+    }
+    if (error.message) {
+      return error.message
+    }
+  }
+  return fallback
+}
+
+export type Citation = components['schemas']['Citation']
+export type ChatResponse = components['schemas']['ChatResponse']
+export type ChatSegment = components['schemas']['ChatSegment']
+export type SearchResult = components['schemas']['SearchResult']
+export type SearchResponse = components['schemas']['SearchResponse']
+export type UploadResponse = components['schemas']['DocumentUploadResponse']
+export type ConversationTurn = components['schemas']['ConversationTurn']
+export type ConversationSummary = components['schemas']['ConversationSummary']
+export type ConversationDetail = components['schemas']['ConversationDetail']
+export type ConversationListResponse = components['schemas']['ConversationListResponse']
+
+export interface DocumentInfo {
+  document_id: string
+  filename: string
+  title?: string | null
+  author?: string | null
+  department?: string | null
+  classification?: string | null
+  file_type: string
+  file_size: number
+  upload_time?: string | null
+  chunks_count: number
+  status?: string
+  owner?: string | null
+  is_public?: boolean
+  allowed_users?: string[]
+  allowed_departments?: string[]
+  allowed_roles?: string[]
+}
+
+export interface AclOptions {
+  isPublic?: boolean
+  allowedUsers?: string
+  allowedDepartments?: string
+  allowedRoles?: string
+}
+
+export async function sendChat(query: string, conversationId?: string): Promise<ChatResponse> {
+  const { data } = await api.post<ChatResponse>('/chat', {
+    query,
+    conversation_id: conversationId,
+    top_k: 5,
+    use_fallback: true,
+  })
+  return data
+}
+
+export async function searchQuery(query: string, topK: number = 10): Promise<SearchResponse> {
+  const { data } = await api.post<SearchResponse>('/search', { query, top_k: topK })
+  return data
+}
+
+export async function uploadDocument(file: File, title?: string, acl?: AclOptions): Promise<UploadResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  if (title) form.append('title', title)
+  if (acl?.isPublic !== undefined) form.append('is_public', String(acl.isPublic))
+  if (acl?.allowedUsers) form.append('allowed_users', acl.allowedUsers)
+  if (acl?.allowedDepartments) form.append('allowed_departments', acl.allowedDepartments)
+  if (acl?.allowedRoles) form.append('allowed_roles', acl.allowedRoles)
+  const { data } = await api.post<UploadResponse>('/upload', form)
+  return data
+}
+
+export async function getHealth(): Promise<Record<string, string>> {
+  const { data } = await api.get('/health')
+  return data
+}
+
+export async function getStats(): Promise<{ total_chunks: number; status: string }> {
+  const { data } = await api.get('/stats')
+  return data
+}
+
+export async function getConversations(): Promise<ConversationListResponse> {
+  const { data } = await api.get('/conversations')
+  return data
+}
+
+export async function getConversation(conversationId: string): Promise<ConversationDetail> {
+  const { data } = await api.get(`/conversations/${conversationId}`)
+  return data
+}
+
+export async function deleteConversation(conversationId: string): Promise<{ success: boolean }> {
+  const { data } = await api.delete(`/conversations/${conversationId}`)
+  return data
+}
+
+export async function listDocuments(): Promise<{ documents: DocumentInfo[] }> {
+  const { data } = await api.get('/documents')
+  return data
+}
+
+export async function deleteDocument(documentId: string): Promise<{ status: string }> {
+  const { data } = await api.delete(`/documents/${documentId}`)
+  return data
+}
+
+export interface AnalyticsTimeRange {
+  start?: string
+  end?: string
+}
+
+export interface AnalyticsRequest {
+  time_range?: AnalyticsTimeRange
+  group_by?: string
+  top_k?: number
+}
+
+export interface AnalyticsResponse {
+  metric: string
+  summary: Record<string, unknown>
+  series: Record<string, unknown>[]
+  detail?: Record<string, unknown> | null
+  generated_at: string
+}
+
+export interface AuditLogQueryRequest {
+  user_id?: string
+  action?: string
+  resource_type?: string
+  resource_id?: string
+  status?: string
+  start_time?: string
+  end_time?: string
+  limit?: number
+  offset?: number
+}
+
+export interface AuditLogQueryResponse {
+  total: number
+  logs: Record<string, unknown>[]
+}
+
+export async function getAnalyticsOverview(): Promise<AnalyticsResponse> {
+  const { data } = await api.get<AnalyticsResponse>('/analytics/overview')
+  return data
+}
+
+export async function analyzeDocuments(request?: AnalyticsRequest): Promise<AnalyticsResponse> {
+  const { data } = await api.post<AnalyticsResponse>('/analytics/documents', request ?? {})
+  return data
+}
+
+export async function analyzeConversations(request?: AnalyticsRequest): Promise<AnalyticsResponse> {
+  const { data } = await api.post<AnalyticsResponse>('/analytics/conversations', request ?? {})
+  return data
+}
+
+export async function analyzeTasks(request?: AnalyticsRequest): Promise<AnalyticsResponse> {
+  const { data } = await api.post<AnalyticsResponse>('/analytics/tasks', request ?? {})
+  return data
+}
+
+export async function analyzeGraph(request?: AnalyticsRequest): Promise<AnalyticsResponse> {
+  const { data } = await api.post<AnalyticsResponse>('/analytics/graph', request ?? {})
+  return data
+}
+
+export async function queryAuditLogs(request: AuditLogQueryRequest): Promise<AuditLogQueryResponse> {
+  const { data } = await api.post<AuditLogQueryResponse>('/analytics/audit', request)
+  return data
+}
+
+export interface StreamDoneResult {
+  conversation_id: string
+  citations: Citation[]
+  confidence: number
+  model_used: string
+  reasoning_mode_used: string
+  is_fallback: boolean
+  answer: string
+}
+
+export async function sendChatStream(
+  query: string,
+  onToken: (token: string) => void,
+  onDone: (result: StreamDoneResult) => void,
+  onError: (error: Error, code?: number) => void,
+  conversationId?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch('/api/v1/chat/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+      ...getUserHeaders(),
+    },
+    body: JSON.stringify({
+      query,
+      conversation_id: conversationId,
+      top_k: 5,
+      use_fallback: true,
+    }),
+    signal,
+  })
+
+  if (!response.ok) {
+    let detail = `HTTP error: ${response.status}`
+    try {
+      const data = await response.json()
+      if (data.detail) {
+        detail = data.detail
+      }
+    } catch {
+      // 非 JSON 响应，使用默认文案
+    }
+    throw new Error(detail)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('Response body is not readable')
+  }
+
+  const decoder = new TextDecoder()
+  let fullAnswer = ''
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data: ')) continue
+
+        const jsonStr = trimmed.slice(6)
+        try {
+          const event = JSON.parse(jsonStr)
+
+          if (event.type === 'token') {
+            fullAnswer += event.content
+            onToken(event.content)
+          } else if (event.type === 'done') {
+            onDone({
+              conversation_id: event.conversation_id,
+              citations: event.citations || [],
+              confidence: event.confidence_score || 0,
+              model_used: event.model_used || '',
+              reasoning_mode_used: '',
+              is_fallback: event.is_fallback || false,
+              answer: fullAnswer,
+            })
+          } else if (event.type === 'error') {
+            onError(new Error(event.content), event.code)
+          }
+        } catch (e) {
+          console.warn('SSE line parse failed:', e)
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}

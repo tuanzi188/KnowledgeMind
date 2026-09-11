@@ -1,0 +1,86 @@
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+.venv/
+venv/
+env/
+*.so
+.Python
+
+# ===========================
+# Node.js
+# ===========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===========================
+# Environment & Secrets
+# ===========================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.*
+credentials.*
+
+# ===========================
+# IDE / Editor
+# ===========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===========================
+# Build Output
+# ===========================
+frontend/dist/
+*.tsbuildinfo
+
+# ===========================
+# Data & Runtime
+# ===========================
+data/
+chroma_db/
+*.db
+*.sqlite3
+logs/
+*.log
+
+# ===========================
+# Docker
+# ===========================
+.docker/
+
+# ===========================
+# Coverage & Test
+# ===========================
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+coverage/
+
+# ===========================
+# Evaluation artifacts
+# ===========================
+eval_report.json
+*.pkl
+token.json

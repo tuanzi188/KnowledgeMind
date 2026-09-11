@@ -1,0 +1,18 @@
+# Optional dependencies for advanced features.
+# Install on top of requirements.txt:
+#   pip install -r requirements.txt -r requirements-optional.txt
+
+# OCR for images and scanned PDFs
+paddleocr>=2.8.0
+
+# Neural reranker (L2 strategy) for hybrid search
+transformers>=4.40.0
+torch>=2.2.0
+
+# Neo4j-backed knowledge graph (alternative to the default in-memory graph)
+neo4j>=5.20.0
+
+# Lightweight data analysis for analytics dashboards
+# Install only when analytics features are needed:
+#   pip install pandas>=2.2.0
+pandas>=2.2.0
