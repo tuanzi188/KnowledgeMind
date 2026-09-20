@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 WORKDIR /app
+ENV DATA_DIR=/app/data
 
 # sentence-transformers / torch 等依赖在 slim 镜像中需要编译工具
 RUN apt-get update && apt-get install -y --no-install-recommends \

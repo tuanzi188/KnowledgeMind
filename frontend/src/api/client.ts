@@ -2,34 +2,33 @@
 import axios from 'axios'
 import type { components } from './generated'
 
-const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? ''
-const USER_STORAGE_KEY = 'knowledge_mind_user_config'
+const ACCESS_TOKEN_STORAGE = 'knowledge_mind_access_token'
+
+export interface AuthenticatedProfile {
+  userId: string
+  roles: string[]
+  department: string
+}
 
 function getAuthHeaders(): Record<string, string> {
-  if (!API_KEY) return {}
-  // Backend accepts either Bearer token or X-API-Key header
-  return { Authorization: `Bearer ${API_KEY}` }
+  const accessToken = sessionStorage.getItem(ACCESS_TOKEN_STORAGE) || ''
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
 }
 
-interface StoredUserConfig {
-  userId?: string
-  roles?: string[]
-  department?: string
+export async function verifyAccessToken(accessToken: string): Promise<void> {
+  await axios.get('/api/v1/auth/me', {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  })
+  sessionStorage.setItem(ACCESS_TOKEN_STORAGE, accessToken)
 }
 
-function getUserHeaders(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(USER_STORAGE_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as StoredUserConfig
-    const headers: Record<string, string> = {}
-    if (parsed.userId) headers['X-User-ID'] = parsed.userId
-    if (parsed.department) headers['X-User-Department'] = parsed.department
-    if (parsed.roles?.length) headers['X-User-Roles'] = parsed.roles.join(',')
-    return headers
-  } catch {
-    return {}
-  }
+export function clearAccessToken(): void {
+  sessionStorage.removeItem(ACCESS_TOKEN_STORAGE)
+}
+
+export async function getAuthenticatedProfile(): Promise<AuthenticatedProfile> {
+  const profileResponse = await api.get<AuthenticatedProfile>('/auth/me')
+  return profileResponse.data
 }
 
 const api = axios.create({
@@ -39,8 +38,7 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const authHeaders = getAuthHeaders()
-  const userHeaders = getUserHeaders()
-  Object.entries({ ...authHeaders, ...userHeaders }).forEach(([key, value]) => {
+  Object.entries(authHeaders).forEach(([key, value]) => {
     config.headers.set(key, value)
   })
   return config
@@ -247,7 +245,6 @@ export async function sendChatStream(
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
-      ...getUserHeaders(),
     },
     body: JSON.stringify({
       query,

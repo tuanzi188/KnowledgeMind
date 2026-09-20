@@ -1,7 +1,7 @@
 import logging
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.models.analytics import (
     AnalyticsResponse,
@@ -13,6 +13,7 @@ from app.models.analytics import (
     GraphAnalyticsRequest,
 )
 from app.core.user_context import extract_user_context
+from app.core.auth import require_administrator
 from app.core.exceptions import UpstreamAPIError
 from app.services.analytics import analytics_service
 from app.services.conversation_memory import conversation_memory
@@ -22,7 +23,7 @@ from app.services.vector_store import vector_store
 from app.services.audit_logger import audit_logger, AuditAction, AuditStatus, AuditEvent
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_administrator)])
 
 
 def _handle_endpoint_error(operation: str, exc: Exception) -> None:

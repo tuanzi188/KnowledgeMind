@@ -43,7 +43,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 }) => {
   const [notificationCount] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const { userId, isAdmin } = useUser()
+  const { userId, isAdmin, logout } = useUser()
   const location = useLocation()
 
   const userMenuItems = [
@@ -53,13 +53,13 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   ]
 
   const handleUserMenuClick = ({ key }: { key: string }) => {
-    if (key === 'logout') console.log('退出登录')
+    if (key === 'logout') logout()
     else if (key === 'settings') setSettingsOpen(true)
   }
 
   const navItems = [
     { key: '/', label: '对话', icon: <MessageOutlined />, path: '/' },
-    { key: '/analytics', label: '数据分析', icon: <BarChartOutlined />, path: '/analytics' },
+    { key: '/analytics', label: '数据分析', icon: <BarChartOutlined />, path: '/analytics', adminOnly: true },
     { key: '/audit', label: '审计日志', icon: <SafetyOutlined />, path: '/audit', adminOnly: true },
   ]
 

@@ -22,12 +22,12 @@ interface PageShellProps {
 
 const PageShell: React.FC<PageShellProps> = ({ children, isDark, onToggleTheme }) => {
   const location = useLocation()
-  const { userId, isAdmin } = useUser()
+  const { userId, isAdmin, logout } = useUser()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const navItems = [
     { key: '/', label: '对话', icon: <MessageOutlined />, path: '/' },
-    { key: '/analytics', label: '数据分析', icon: <BarChartOutlined />, path: '/analytics' },
+    { key: '/analytics', label: '数据分析', icon: <BarChartOutlined />, path: '/analytics', adminOnly: true },
     { key: '/audit', label: '审计日志', icon: <SafetyOutlined />, path: '/audit', adminOnly: true },
   ]
 
@@ -127,6 +127,7 @@ const PageShell: React.FC<PageShellProps> = ({ children, isDark, onToggleTheme }
               items: userMenuItems,
               onClick: ({ key }) => {
                 if (key === 'settings') setSettingsOpen(true)
+                else if (key === 'logout') logout()
               },
             }}
             trigger={['click']}

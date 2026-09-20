@@ -19,6 +19,7 @@ env/
 # Node.js
 # ===========================
 node_modules/
+node_modules.incomplete/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -33,6 +34,7 @@ pnpm-debug.log*
 *.pem
 *.key
 secrets.*
+!backend/app/core/secrets.py
 credentials.*
 
 # ===========================
@@ -84,3 +86,4 @@ coverage/
 eval_report.json
 *.pkl
 token.json
+.preview/

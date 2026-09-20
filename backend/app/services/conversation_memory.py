@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import List, Optional, Dict
 from collections import OrderedDict
 
-from app.config import CACHE_CONFIG
+from app.config import CACHE_CONFIG, DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "..", "data", "conversations")
+DEFAULT_DATA_DIR = str(DATA_DIR / "conversations")
 
 SESSION_TTL_SECONDS = 365 * 24 * 3600
 REDIS_KEY_PREFIX = "km:session:"
@@ -354,10 +354,12 @@ class ConversationMemory:
 
     async def get_or_create_session(self, conversation_id: str) -> ConversationSession:
         await self._cleanup_expired()
+        # flush 会获取同一把锁，必须在进入临界区前调用。
+        if conversation_id not in self._sessions and len(self._sessions) >= self.max_sessions:
+            await self.flush()
         async with self._lock:
             if conversation_id not in self._sessions:
                 if len(self._sessions) >= self.max_sessions:
-                    await self.flush()
                     oldest_key = next(iter(self._sessions))
                     self._dirty_sessions.discard(oldest_key)
                     await self._store.delete(oldest_key)

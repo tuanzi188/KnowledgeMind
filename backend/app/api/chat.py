@@ -10,6 +10,7 @@ from app.models.chat import (
     ConversationListResponse, ConversationDetail, ConversationDeleteResponse
 )
 from app.core.user_context import extract_user_context, UserContext
+from app.core.conversation_scope import ConversationNamespace
 from app.core.exceptions import UpstreamAPIError
 from app.services.rag_engine import rag_query, rag_query_stream
 from app.services.hybrid_search import hybrid_retriever
@@ -20,6 +21,16 @@ from app.services.audit_logger import audit_logger, AuditAction, AuditStatus, Au
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/auth/me")
+async def authenticated_profile(request: Request):
+    verified_profile = extract_user_context(request)
+    return {
+        "userId": verified_profile.user_id,
+        "roles": verified_profile.roles,
+        "department": verified_profile.department,
+    }
 
 
 def _handle_endpoint_error(operation: str, exc: Exception) -> None:
@@ -44,6 +55,7 @@ def _handle_endpoint_error(operation: str, exc: Exception) -> None:
 async def chat(request: Request, body: ChatRequest):
     user_context = extract_user_context(request)
     conversation_id = body.conversation_id or str(uuid.uuid4())
+    scoped_conversation_id = ConversationNamespace(user_context).storage_id(conversation_id)
     start_time = asyncio.get_event_loop().time()
     status = AuditStatus.SUCCESS
     error_message = ""
@@ -51,7 +63,7 @@ async def chat(request: Request, body: ChatRequest):
     try:
         response = await rag_query(
             query=body.query,
-            conversation_id=conversation_id,
+            conversation_id=scoped_conversation_id,
             reasoning_mode=body.reasoning_mode.value if body.reasoning_mode else None,
             top_k=body.top_k or 5,
             temperature=body.temperature or 0.1,
@@ -89,6 +101,7 @@ async def chat(request: Request, body: ChatRequest):
 async def chat_stream(request: Request, body: ChatRequest):
     user_context = extract_user_context(request)
     conversation_id = body.conversation_id or str(uuid.uuid4())
+    stream_storage_id = ConversationNamespace(user_context).storage_id(conversation_id)
     start_time = asyncio.get_event_loop().time()
 
     async def event_stream():
@@ -97,7 +110,7 @@ async def chat_stream(request: Request, body: ChatRequest):
         try:
             async for token in rag_query_stream(
                 query=body.query,
-                conversation_id=conversation_id,
+                conversation_id=stream_storage_id,
                 reasoning_mode=body.reasoning_mode.value if body.reasoning_mode else None,
                 top_k=body.top_k or 5,
                 temperature=body.temperature or 0.1,
@@ -108,7 +121,7 @@ async def chat_stream(request: Request, body: ChatRequest):
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
             citations_data = [c.model_dump() for c in result_holder.get("citations", [])]
-            yield f"data: {json.dumps({
+            stream_done_payload = {
                 'type': 'done',
                 'conversation_id': conversation_id,
                 'citations': citations_data,
@@ -116,7 +129,8 @@ async def chat_stream(request: Request, body: ChatRequest):
                 'model_used': result_holder.get('model_used', ''),
                 'reasoning_content': result_holder.get('reasoning_content', ''),
                 'is_fallback': result_holder.get('is_fallback', False),
-            })}\n\n"
+            }
+            yield f"data: {json.dumps(stream_done_payload)}\n\n"
         except UpstreamAPIError as e:
             stream_error = e
             logger.warning("Stream upstream error [%s]: %s", e.status_code, e.detail)
@@ -210,7 +224,13 @@ async def list_conversations(request: Request):
     user_context = extract_user_context(request)
     start_time = asyncio.get_event_loop().time()
     try:
-        conversations = await conversation_memory.list_conversations()
+        stored_conversations = await conversation_memory.list_conversations()
+        conversation_namespace = ConversationNamespace(user_context)
+        conversations = []
+        for stored_conversation in stored_conversations:
+            visible_conversation_id = conversation_namespace.public_id(stored_conversation["conversation_id"])
+            if visible_conversation_id is not None:
+                conversations.append({**stored_conversation, "conversation_id": visible_conversation_id})
     except HTTPException:
         raise
     except Exception as e:
@@ -234,7 +254,8 @@ async def list_conversations(request: Request):
 async def get_conversation(conversation_id: str, request: Request):
     user_context = extract_user_context(request)
     start_time = asyncio.get_event_loop().time()
-    conversation = await conversation_memory.get_conversation(conversation_id)
+    detail_storage_id = ConversationNamespace(user_context).storage_id(conversation_id)
+    conversation = await conversation_memory.get_conversation(detail_storage_id)
     status = AuditStatus.SUCCESS if conversation else AuditStatus.FAILURE
     duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
     await audit_logger.log(
@@ -250,7 +271,7 @@ async def get_conversation(conversation_id: str, request: Request):
     )
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return ConversationDetail(**conversation)
+    return ConversationDetail(**{**conversation, "conversation_id": conversation_id})
 
 
 @router.delete("/conversations/{conversation_id}", response_model=ConversationDeleteResponse)
@@ -260,7 +281,10 @@ async def delete_conversation(conversation_id: str, request: Request):
     status = AuditStatus.SUCCESS
     error_message = ""
     try:
-        await conversation_memory.clear(conversation_id)
+        delete_storage_id = ConversationNamespace(user_context).storage_id(conversation_id)
+        if await conversation_memory.get_conversation(delete_storage_id) is None:
+            raise HTTPException(status_code=404, detail="会话不存在")
+        await conversation_memory.clear(delete_storage_id)
     except HTTPException as e:
         status = AuditStatus.DENIED if e.status_code == 403 else AuditStatus.FAILURE
         error_message = str(e.detail)

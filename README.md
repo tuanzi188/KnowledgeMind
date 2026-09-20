@@ -128,7 +128,7 @@ sequenceDiagram
 ### 1. 克隆项目
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/tuanzi188/KnowledgeMind.git
 cd KnowledgeMind
 ```
 
@@ -142,8 +142,9 @@ cp backend/.env.example backend/.env
 ### 3. Docker 一键启动（推荐）
 
 ```bash
-docker-compose up -d
-# 访问 http://localhost:8002
+docker compose up -d --build
+# 网页：http://localhost:5173
+# API 文档：http://localhost:8002/docs
 ```
 
 ### 4. 本地开发模式
@@ -160,7 +161,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 # 访问 http://localhost:5173
 ```
@@ -236,3 +237,36 @@ KnowledgeMind/
 ## License
 
 MIT
+
+## 身份与权限
+
+- 单用户开发模式：未配置认证时使用固定的 `anonymous` 身份，不读取客户端自报的用户、部门或角色。仅适合本机开发。
+- 单用户访问控制：后端设置 `API_KEY`，在网页右上角账号面板输入该令牌。不要使用 `VITE_API_KEY` 将共享密钥编译进前端。
+- 多用户模式：在 `backend/.env` 配置 `AUTH_USERS_JSON`，为每人提供独立随机令牌、用户 ID、角色与部门。配置示例见 `backend/.env.example`。启用后共享 `API_KEY` 不再有效。
+- 用户 ID 应保持稳定；同一用户 ID 可配置多个令牌用于轮换。角色仅由服务端授予，只有管理员可查看全局分析与审计。
+- 访问令牌只保存在当前标签页的会话存储中；退出后清除。部署到公网时必须使用 HTTPS，并设置身份凭据。
+- 每个用户的会话使用独立存储命名空间，列表、详情、续聊、流式对话和删除均隔离。历史无身份会话仅在原单用户模式下可见，不自动分配给新用户。
+- 本轮是访问凭据与会话隔离加固，不包含注册、找回密码、企业单点登录或用户管理后台。
+
+## 数据与升级
+
+- 本地默认写入仓库根目录 `data/`；Docker 使用 `DATA_DIR=/app/data`，与宿主机 `./data` 挂载一致，会话文件也使用这个目录。
+- 旧版本曾将部分数据写到仓库父目录。升级前停止服务，备份旧目录，并手动迁移到新的 `data/`；不要直接覆盖已有数据。也可临时将 `DATA_DIR` 指向旧目录。
+- Redis 仅在容器网络内使用，不再向宿主机公开 6379 端口。
+- `frontend/index.html` 现在加载 React 入口，旧单文件界面保存在 `frontend/legacy-preview.html`，不参与生产构建。
+- 无外部模型凭据时可以运行单元测试；实际文档问答仍需可用的模型 API 或本地 Ollama。
+
+## 开发验证
+
+```sh
+cd backend
+pip install -r requirements.txt
+pip install pytest pytest-asyncio
+python -m pytest -q
+cd ../frontend
+npm ci
+npm test
+npm run build
+```
+
+CI 同时运行后端测试、前端测试和生产构建。权限回归覆盖伪造角色、跨用户读取与删除、流式会话隔离和非法会话编号。

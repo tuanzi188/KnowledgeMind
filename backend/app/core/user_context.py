@@ -5,7 +5,7 @@ from fastapi import Request
 
 @dataclass
 class UserContext:
-    """从请求头解析的用户上下文。"""
+    """经过服务端认证的用户上下文。"""
 
     user_id: str = "anonymous"
     roles: List[str] = None
@@ -27,30 +27,11 @@ class UserContext:
 
 
 def extract_user_context(request: Request) -> UserContext:
-    """从请求头提取用户身份信息。
-
-    兼容现有 API Key 模式：未提供用户头时回退到 anonymous。
-    """
-    user_id = request.headers.get("X-User-ID", "anonymous").strip() or "anonymous"
-    roles_header = request.headers.get("X-User-Roles", "")
-    department = request.headers.get("X-User-Department", "").strip()
-
-    roles = []
-    if roles_header:
-        for role in roles_header.split(","):
-            role = role.strip().lower()
-            if role:
-                roles.append(role)
-
-    client_ip = request.client.host if request.client else ""
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    if forwarded_for:
-        client_ip = forwarded_for.split(",")[0].strip()
-
+    """只读取认证依赖保存的身份，不相信客户端提交的角色或用户 ID。"""
+    verified_identity = getattr(request.state, "authenticated_user", None)
+    if isinstance(verified_identity, UserContext):
+        return verified_identity
     return UserContext(
-        user_id=user_id,
-        roles=roles,
-        department=department,
-        ip_address=client_ip,
+        ip_address=request.client.host if request.client else "",
         user_agent=request.headers.get("User-Agent", ""),
     )

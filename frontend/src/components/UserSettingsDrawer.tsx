@@ -1,122 +1,47 @@
-import React, { useEffect } from 'react'
-import { Drawer, Form, Input, Select, Tag, Button, Space, Typography, Divider, Alert } from 'antd'
+import React, { useState } from 'react'
+import { Alert, Button, Descriptions, Drawer, Form, Input, Tag } from 'antd'
+import { LoginOutlined } from '@ant-design/icons'
+import { extractErrorMessage } from '../api/client'
 import { useUser } from '../contexts/UserContext'
-
-const { Text } = Typography
 
 interface UserSettingsDrawerProps {
   open: boolean
   onClose: () => void
 }
 
-const ROLE_OPTIONS = [
-  { value: 'admin', label: '管理员 (admin)' },
-  { value: 'user', label: '普通用户 (user)' },
-  { value: 'analyst', label: '分析师 (analyst)' },
-  { value: 'operator', label: '运维 (operator)' },
-]
-
 const UserSettingsDrawer: React.FC<UserSettingsDrawerProps> = ({ open, onClose }) => {
-  const { userId, department, roles, isAdmin, updateConfig } = useUser()
-  const [form] = Form.useForm()
+  const { userId, department, roles, login } = useUser()
+  const [loginPending, setLoginPending] = useState(false)
+  const [loginError, setLoginError] = useState('')
 
-  useEffect(() => {
-    if (open) {
-      form.setFieldsValue({
-        userId,
-        department,
-        roles,
-      })
+  const submitAccessToken = async (formValues: { accessToken: string }) => {
+    setLoginPending(true)
+    setLoginError('')
+    try {
+      await login(formValues.accessToken)
+    } catch (loginFailure) {
+      setLoginError(extractErrorMessage(loginFailure, '登录失败'))
+    } finally {
+      setLoginPending(false)
     }
-  }, [open, form, userId, department, roles])
-
-  const handleSave = () => {
-    const values = form.getFieldsValue()
-    updateConfig({
-      userId: values.userId?.trim() || 'anonymous',
-      department: values.department?.trim() || '',
-      roles: Array.isArray(values.roles) ? values.roles.map(String) : [],
-    })
-    onClose()
   }
 
   return (
-    <Drawer
-      title="用户身份配置"
-      placement="right"
-      width={420}
-      onClose={onClose}
-      open={open}
-      footer={
-        <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="primary" onClick={handleSave}>
-            保存
-          </Button>
-        </Space>
-      }
-    >
-      <Alert
-        message="身份信息会随每次 API 请求发送到后端，用于权限控制和审计。"
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-      />
-
-      <Form form={form} layout="vertical">
-        <Form.Item
-          name="userId"
-          label="用户 ID"
-          rules={[{ required: true, message: '请输入用户 ID' }]}
-        >
-          <Input placeholder="例如：zhangsan" />
+    <Drawer title="账号" placement="right" width={420} open={open} onClose={onClose} destroyOnClose>
+      <Descriptions column={1} size="small" style={{ marginBottom: 24 }}>
+        <Descriptions.Item label="用户">{userId}</Descriptions.Item>
+        <Descriptions.Item label="部门">{department || '未分配'}</Descriptions.Item>
+        <Descriptions.Item label="角色">
+          {roles.length ? roles.map((role) => <Tag key={role}>{role}</Tag>) : '未分配'}
+        </Descriptions.Item>
+      </Descriptions>
+      {loginError && <Alert type="error" showIcon message={loginError} style={{ marginBottom: 16 }} />}
+      <Form layout="vertical" onFinish={submitAccessToken}>
+        <Form.Item name="accessToken" label="访问令牌" rules={[{ required: true, message: '请输入访问令牌' }]}>
+          <Input.Password autoComplete="off" />
         </Form.Item>
-
-        <Form.Item name="department" label="所属部门">
-          <Input placeholder="例如：研发中心" />
-        </Form.Item>
-
-        <Form.Item name="roles" label="角色">
-          <Select
-            mode="tags"
-            placeholder="输入或选择角色"
-            options={ROLE_OPTIONS}
-            allowClear
-          />
-        </Form.Item>
+        <Button type="primary" htmlType="submit" icon={<LoginOutlined />} loading={loginPending}>登录</Button>
       </Form>
-
-      <Divider />
-
-      <div>
-        <Text type="secondary">当前身份摘要</Text>
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div>
-            <Text>用户：</Text>
-            <Text strong>{userId || 'anonymous'}</Text>
-          </div>
-          <div>
-            <Text>部门：</Text>
-            <Text strong>{department || '未设置'}</Text>
-          </div>
-          <div>
-            <Text>角色：</Text>
-            {roles.length > 0 ? (
-              roles.map((role) => (
-                <Tag key={role} color={role.toLowerCase() === 'admin' ? 'red' : 'blue'}>
-                  {role}
-                </Tag>
-              ))
-            ) : (
-              <Text type="secondary">未设置</Text>
-            )}
-          </div>
-          <div>
-            <Text>管理员权限：</Text>
-            <Tag color={isAdmin ? 'success' : 'default'}>{isAdmin ? '已开启' : '未开启'}</Tag>
-          </div>
-        </div>
-      </div>
     </Drawer>
   )
 }

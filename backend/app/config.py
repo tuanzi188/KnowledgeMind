@@ -11,7 +11,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = BASE_DIR.parent / "data"
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))).expanduser().resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_MODE = os.getenv("MODEL_MODE", "api")

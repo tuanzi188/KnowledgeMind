@@ -213,6 +213,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Reranker warmup skipped: %s", e)
 
     yield
+    await conversation_memory.flush()
     await audit_logger.stop()
     await task_queue.stop()
     logger.info("Shutting down KnowledgeMind RAG API...")
@@ -250,12 +251,15 @@ app.include_router(chat_router, prefix="/api/v1", tags=["Chat"], dependencies=[D
 app.include_router(documents_router, prefix="/api/v1", tags=["Documents"], dependencies=[Depends(verify_api_key)])
 app.include_router(analytics_router, prefix="/api/v1", tags=["Analytics"], dependencies=[Depends(verify_api_key)])
 
-FRONTEND_PATH = Path(__file__).parent.parent.parent / "frontend"
+FRONTEND_PATH = Path(__file__).parent.parent.parent / "frontend" / "dist"
 
 if FRONTEND_PATH.exists():
     logger.info("Serving frontend from %s", FRONTEND_PATH)
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_PATH / "assets")), name="frontend_assets")
 
     @app.get("/")
+    @app.get("/analytics")
+    @app.get("/audit")
     async def serve_index():
         return FileResponse(str(FRONTEND_PATH / "index.html"))
 else:

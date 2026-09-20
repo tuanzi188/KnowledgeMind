@@ -1,91 +1,49 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { AuthenticatedProfile, clearAccessToken, getAuthenticatedProfile, verifyAccessToken } from '../api/client'
 
-export interface UserConfig {
-  userId: string
-  roles: string[]
-  department: string
-}
-
-interface UserContextValue extends UserConfig {
+interface UserContextValue extends AuthenticatedProfile {
   isAdmin: boolean
-  updateConfig: (config: Partial<UserConfig>) => void
-  resetConfig: () => void
+  login: (accessToken: string) => Promise<void>
+  logout: () => void
 }
 
-const STORAGE_KEY = 'knowledge_mind_user_config'
-
-const DEFAULT_CONFIG: UserConfig = {
-  userId: 'anonymous',
-  roles: [],
-  department: '',
-}
-
-function loadConfig(): UserConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_CONFIG
-    const parsed = JSON.parse(raw)
-    return {
-      userId: typeof parsed.userId === 'string' ? parsed.userId : DEFAULT_CONFIG.userId,
-      roles: Array.isArray(parsed.roles) ? parsed.roles.map(String) : DEFAULT_CONFIG.roles,
-      department: typeof parsed.department === 'string' ? parsed.department : DEFAULT_CONFIG.department,
-    }
-  } catch {
-    return DEFAULT_CONFIG
-  }
-}
-
-function saveConfig(config: UserConfig): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-  } catch {
-    // 忽略 localStorage 写入失败（如隐私模式）
-  }
-}
-
+const EMPTY_PROFILE: AuthenticatedProfile = { userId: 'anonymous', roles: [], department: '' }
 const UserContext = createContext<UserContextValue | undefined>(undefined)
 
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [config, setConfig] = useState<UserConfig>(loadConfig)
+  const [profile, setProfile] = useState<AuthenticatedProfile>(EMPTY_PROFILE)
 
   useEffect(() => {
-    saveConfig(config)
-  }, [config])
-
-  const updateConfig = useCallback((patch: Partial<UserConfig>) => {
-    setConfig((prev) => ({
-      ...prev,
-      ...patch,
-      roles: patch.roles ?? prev.roles,
-    }))
+    let profileRequestActive = true
+    getAuthenticatedProfile()
+      .then((verifiedProfile) => { if (profileRequestActive) setProfile(verifiedProfile) })
+      .catch(() => { if (profileRequestActive) setProfile(EMPTY_PROFILE) })
+    return () => { profileRequestActive = false }
   }, [])
 
-  const resetConfig = useCallback(() => {
-    setConfig(DEFAULT_CONFIG)
+  const login = useCallback(async (accessToken: string) => {
+    await verifyAccessToken(accessToken.trim())
+    // 切换身份时清除页面内的旧会话、文档和流式请求状态。
+    window.location.reload()
   }, [])
 
-  const isAdmin = useMemo(
-    () => config.roles.some((role) => role.toLowerCase() === 'admin'),
-    [config.roles],
-  )
+  const logout = useCallback(() => {
+    clearAccessToken()
+    window.location.reload()
+  }, [])
 
-  const value = useMemo(
-    () => ({
-      ...config,
-      isAdmin,
-      updateConfig,
-      resetConfig,
-    }),
-    [config, isAdmin, updateConfig, resetConfig],
-  )
+  const value = useMemo(() => ({
+    ...profile,
+    isAdmin: profile.roles.includes('admin'),
+    login,
+    logout,
+  }), [profile, login, logout])
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>
 }
 
 export function useUser(): UserContextValue {
-  const ctx = useContext(UserContext)
-  if (!ctx) {
-    throw new Error('useUser must be used within UserProvider')
-  }
-  return ctx
+  const userContextValue = useContext(UserContext)
+  if (!userContextValue) throw new Error('用户上下文必须位于 UserProvider 内')
+  return userContextValue
 }
