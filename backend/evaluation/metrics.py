@@ -23,3 +23,14 @@ def ndcg_at_k(retrieved_ids: List[str], relevant_ids: List[str], k: int) -> floa
     ideal_count = min(len(relevant), k)
     ideal_dcg = sum(1.0 / math.log2(i + 2) for i in range(ideal_count))
     return dcg / ideal_dcg if ideal_dcg else 0.0
+
+
+def mrr_at_k(retrieved_ids: List[str], relevant_ids: List[str], k: int) -> float:
+    """Mean Reciprocal Rank：第一个相关结果的排名倒数。"""
+    relevant = set(relevant_ids)
+    if not relevant:
+        return 0.0
+    for i, cid in enumerate(retrieved_ids[:k]):
+        if cid in relevant:
+            return 1.0 / (i + 1)
+    return 0.0

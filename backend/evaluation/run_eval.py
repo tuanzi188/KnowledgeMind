@@ -19,7 +19,7 @@ from app.services.hybrid_search import HybridRetriever
 from app.services.model_provider import rag_query as model_rag_query
 from app.services.model_provider import simple_query as model_simple_query
 
-from evaluation.metrics import ndcg_at_k, recall_at_k
+from evaluation.metrics import mrr_at_k, ndcg_at_k, recall_at_k
 from evaluation.sample_data import CORPUS, QA_PAIRS
 
 _JUDGE_SYSTEM = "你是知识库回答质量评估员，只输出 JSON，不要输出其他内容。"
@@ -55,9 +55,9 @@ def _bm25_search(bm25, query, top_k):
     return bm25.search(query, top_k=top_k, fuzzy_match=False)
 
 
-def _fuse(vector_results, keyword_results, top_k):
+def _fuse(vector_results, keyword_results, top_k, query_type="综合分析"):
     hybrid = HybridRetriever()
-    weights = hybrid.weight_profiles.get("综合分析", {})
+    weights = hybrid.weight_profiles.get(query_type, hybrid.weight_profiles["综合分析"])
     return hybrid.rrf_fuse(
         [vector_results, keyword_results],
         weights=[weights.get("vector", 0.4), weights.get("keyword", 0.3)],
@@ -122,39 +122,59 @@ def _avg(rows, key):
 
 def _print_report(rows, top_k, use_generation, embedding):
     print(f"\n=== 效果评测报告 (top_k={top_k}) ===")
-    print(f"文档 {len(CORPUS)} 个 chunk，问答 {len(rows)} 条，embedding={embedding.version_tag}")
+    print(f"语料 {len(CORPUS)} 个 chunk，问答 {len(rows)} 条，embedding={embedding.version_tag}")
 
-    header = ["query", "recall@1", "recall@3", "recall@5", "ndcg@5"]
+    header = ["query_type", "query", "recall@1", "recall@3", "recall@5", "mrr@5", "ndcg@5"]
     if use_generation:
         header += ["faithfulness", "relevancy"]
     print(" | ".join(header))
 
     for row in rows:
         cells = [
+            row.get("query_type", "-"),
             row["query"],
             f"{row['recall@1']:.2f}",
             f"{row['recall@3']:.2f}",
             f"{row['recall@5']:.2f}",
+            f"{row['mrr@5']:.2f}",
             f"{row['ndcg@5']:.2f}",
         ]
         if use_generation:
             cells += [f"{row['faithfulness']:.2f}", f"{row['relevancy']:.2f}"]
         print(" | ".join(cells))
 
-    print("\n--- 平均指标 ---")
+    print("\n--- 总体平均 ---")
     print(f"recall@1 = {_avg(rows, 'recall@1'):.3f}")
     print(f"recall@3 = {_avg(rows, 'recall@3'):.3f}")
     print(f"recall@5 = {_avg(rows, 'recall@5'):.3f}")
+    print(f"mrr@5    = {_avg(rows, 'mrr@5'):.3f}")
     print(f"ndcg@5   = {_avg(rows, 'ndcg@5'):.3f}")
+
+    print("\n--- 分场景统计 ---")
+    by_type = {}
+    for row in rows:
+        by_type.setdefault(row.get("query_type", "-"), []).append(row)
+    print(f"{'场景':<8} {'条数':>4} {'recall@5':>10} {'mrr@5':>8} {'ndcg@5':>8}")
+    for qtype, group in by_type.items():
+        print(f"{qtype:<8} {len(group):>4} {_avg(group, 'recall@5'):>10.3f} {_avg(group, 'mrr@5'):>8.3f} {_avg(group, 'ndcg@5'):>8.3f}")
+
     if use_generation:
-        print(f"faithfulness = {_avg(rows, 'faithfulness'):.3f}")
+        print(f"\nfaithfulness = {_avg(rows, 'faithfulness'):.3f}")
         print(f"relevancy    = {_avg(rows, 'relevancy'):.3f}")
     else:
-        print("生成指标未跑（未配置 LLM API key 或已跳过）")
+        print("\n生成指标未跑（未配置 LLM API key 或已跳过）")
 
     report_path = _BACKEND_DIR / "eval_report.json"
     with open(report_path, "w", encoding="utf-8") as report_file:
-        json.dump({"embedding": embedding.version_tag, "rows": rows}, report_file, ensure_ascii=False, indent=2)
+        json.dump({
+            "embedding": embedding.version_tag,
+            "summary": {
+                "recall@5": _avg(rows, "recall@5"),
+                "mrr@5": _avg(rows, "mrr@5"),
+                "ndcg@5": _avg(rows, "ndcg@5"),
+            },
+            "rows": rows,
+        }, report_file, ensure_ascii=False, indent=2)
     print(f"\n报告已写入：{report_path}")
 
 
@@ -183,16 +203,18 @@ async def run(top_k, skip_generation):
     for index, qa in enumerate(QA_PAIRS):
         vector_results = _dense_search(query_vecs[index], corpus_vecs, CORPUS, top_k)
         keyword_results = _bm25_search(bm25, qa["query"], top_k)
-        fused = _fuse(vector_results, keyword_results, top_k)
+        fused = _fuse(vector_results, keyword_results, top_k, query_type=qa.get("query_type", "综合分析"))
         retrieved_ids = [item["chunk_id"] for item in fused]
 
         row = {
+            "query_type": qa.get("query_type", "综合分析"),
             "query": qa["query"],
             "relevant": qa["relevant_chunk_ids"],
             "retrieved": retrieved_ids,
             "recall@1": recall_at_k(retrieved_ids, qa["relevant_chunk_ids"], 1),
             "recall@3": recall_at_k(retrieved_ids, qa["relevant_chunk_ids"], 3),
             "recall@5": recall_at_k(retrieved_ids, qa["relevant_chunk_ids"], 5),
+            "mrr@5": mrr_at_k(retrieved_ids, qa["relevant_chunk_ids"], 5),
             "ndcg@5": ndcg_at_k(retrieved_ids, qa["relevant_chunk_ids"], 5),
         }
 

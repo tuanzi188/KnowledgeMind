@@ -14,7 +14,7 @@
 
 | 特性 | 说明 |
 |------|------|
-| **多格式文档解析** | 支持 PDF、Word、Excel、PPT、Markdown、TXT、CSV |
+| **多格式文档解析** | 支持 12 种格式：PDF / Word / Excel / PPT / Markdown / TXT / CSV；含 5 类图片 OCR / Vision（PNG / JPG / JPEG / BMP / GIF），扫描件 PDF 自动走 OCR |
 | **多路混合检索** | 向量检索（ChromaDB）+ 关键词检索（BM25）+ 知识图谱检索 |
 | **智能重排序** | 三级 Rerank 策略（L1/L2/L3），根据查询复杂度自适应调整 |
 | **流式对话** | SSE 流式输出，打字机效果，用户体验流畅 |
