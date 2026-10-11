@@ -85,6 +85,10 @@ class TaskQueue:
         self._max_retry = TASK_RETRY_MAX
         self._retry_base_delay = TASK_RETRY_DELAY_BASE
 
+    def pending_count(self) -> int:
+        """当前排队中（尚未被 Worker 取走）的任务数，供健康检查与监控使用。"""
+        return self._queue.qsize()
+
     async def start(self):
         """启动任务队列 Worker。"""
         if self._worker_task and not self._worker_task.done():

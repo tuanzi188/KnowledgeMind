@@ -7,6 +7,44 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 
+_CJK_RANGES = (
+    ("\u4e00", "\u9fff"),   # CJK 统一表意文字
+    ("\u3400", "\u4dbf"),   # 扩展 A
+    ("\u3040", "\u30ff"),   # 日文假名
+    ("\uac00", "\ud7af"),   # 韩文音节
+)
+
+
+def estimate_tokens(text: str) -> int:
+    """按字符构成估算 token 数：CJK 约 1 token/字，其余约 1 token/4 字符。
+
+    原先统一按 3.2 字/token 折算，那是英文经验值。中文一个汉字基本就是 1 个
+    token，用 3.2 会低估 2~3 倍，按 max_tokens 组装出的上下文实际会远超预算。
+    """
+    if not text:
+        return 0
+    cjk = 0
+    for ch in text:
+        if any(low <= ch <= high for low, high in _CJK_RANGES):
+            cjk += 1
+    other = len(text) - cjk
+    return cjk + max(1, round(other / 4)) if other else cjk
+
+
+def _truncate_to_tokens(text: str, token_cap: int) -> str:
+    """按估算 token 数截断，二分查找保证结果与 estimate_tokens 口径一致。"""
+    if estimate_tokens(text) <= token_cap:
+        return text
+    low, high = 0, len(text)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if estimate_tokens(text[:mid]) <= token_cap:
+            low = mid
+        else:
+            high = mid - 1
+    return text[:low]
+
+
 class Reranker:
     def __init__(self):
         self._reranker_model = None
@@ -31,27 +69,16 @@ class Reranker:
                     local_files_only=True,
                 )
             except Exception:
-                logger.info("BGE Reranker model not in cache, downloading (timeout=60s)...")
-                # Download with timeout to avoid blocking startup
-                import asyncio
-                try:
-                    self._reranker_tokenizer = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            AutoTokenizer.from_pretrained,
-                            "BAAI/bge-reranker-base",
-                        ),
-                        timeout=60.0,
-                    )
-                    self._reranker_model = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            AutoModelForSequenceClassification.from_pretrained,
-                            "BAAI/bge-reranker-base",
-                        ),
-                        timeout=60.0,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("BGE Reranker model download timed out, L2 will fallback to L1")
-                    return
+                # 启动阶段只允许读本地缓存，绝不下载：asyncio.wait_for 无法取消
+                # asyncio.to_thread 里已经跑起来的下载线程，一旦模型未缓存，启动会被
+                # 无限期阻塞（冷启动实测卡死超过 2 分钟）。未缓存就跳过预热，L2 档在
+                # 真正被用到时再懒加载。
+                self._reranker_model = None
+                logger.info(
+                    "BGE Reranker not in local cache; skipping warmup, "
+                    "L2 will load lazily on first use (L1 fallback until then)"
+                )
+                return
             
             self._reranker_model.eval()
             self._model_loaded = True
@@ -114,10 +141,12 @@ class Reranker:
                 c["rerank_level"] = "L1"
                 continue
 
-            overlap = sum(1 for t in query_tokens if t in "".join(content_tokens))
-            keyword_density = len(query_tokens & set(content_tokens)) / max(len(query_tokens), 1)
+            # 命中数用集合交集统计；原先写成 t in "".join(content_tokens) 是在拼接串上做子串
+            # 匹配，会跨词边界误命中（如 "工伤" 命中 ["工","伤"] 拼接结果）。
+            matched = query_tokens & set(content_tokens)
+            keyword_density = len(matched) / max(len(query_tokens), 1)
             base_score = c.get("rrf_score", c.get("score", 0))
-            c["rerank_score"] = base_score * 0.5 + keyword_density * 0.3 + (overlap / max(len(content), 1)) * 0.2
+            c["rerank_score"] = base_score * 0.5 + keyword_density * 0.3 + (len(matched) / max(len(content), 1)) * 0.2
             c["rerank_level"] = "L1"
 
         candidates.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
@@ -221,11 +250,12 @@ class Reranker:
             return "", []
 
         used_docs = []
-        total_chars = 0
-        char_budget = self._estimate_chars_for_tokens(max_tokens)
+        used_tokens = 0
         seen_ids = set()
         per_document_chunk_counter: dict[str, int] = {}
         max_chunks_per_document = 2
+        # 单个文档最多占预算的 1/3，避免一篇长文档挤掉其余候选
+        single_doc_token_cap = max(max_tokens // 3, 1)
 
         for doc in reranked:
             chunk_id = doc.get("chunk_id", "")
@@ -245,19 +275,22 @@ class Reranker:
             if current_document_chunk_count >= max_chunks_per_document:
                 continue
 
-            if total_chars + len(content) <= char_budget:
+            content_tokens = estimate_tokens(content)
+
+            if used_tokens + content_tokens <= max_tokens:
                 used_docs.append(doc)
-                total_chars += len(content)
+                used_tokens += content_tokens
                 per_document_chunk_counter[document_key] = current_document_chunk_count + 1
-            elif len(content) > char_budget // 3:
-                truncated = content[:char_budget // 3]
-                if total_chars + len(truncated) <= char_budget:
+            elif content_tokens > single_doc_token_cap:
+                truncated = _truncate_to_tokens(content, single_doc_token_cap)
+                truncated_tokens = estimate_tokens(truncated)
+                if truncated and used_tokens + truncated_tokens <= max_tokens:
                     doc = {**doc, "content": truncated + "...[截断]"}
                     used_docs.append(doc)
-                    total_chars += len(truncated)
+                    used_tokens += truncated_tokens
                     per_document_chunk_counter[document_key] = current_document_chunk_count + 1
 
-            if total_chars >= char_budget:
+            if used_tokens >= max_tokens:
                 break
 
         parts = []
@@ -271,10 +304,6 @@ class Reranker:
             parts.append(f"[{i}] {title} (段落{chunk_idx}{page_info}):\n{content}")
 
         return "\n\n---\n\n".join(parts), used_docs
-
-    @staticmethod
-    def _estimate_chars_for_tokens(max_tokens: int) -> int:
-        return int(max_tokens * 3.2)
 
 
 reranker = Reranker()

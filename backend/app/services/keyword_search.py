@@ -145,6 +145,8 @@ class BM25Searcher:
         self.synonyms = synonyms or DEFAULT_SYNONYMS
         self._doc_lengths: list[int] = []
         self._doc_counters: list[Counter] = []
+        # 倒排索引：token -> 含该 token 的文档下标，避免检索时逐文档全表扫描
+        self._postings: dict[str, list[int]] = {}
         self._vocab_by_len: dict[int, list[str]] = {}
         self._tokenizer = ChineseTokenizer(user_dict_path=USER_DICT_FILE)
 
@@ -225,7 +227,8 @@ class BM25Searcher:
             )
         self._tokenizer.ensure_terms(custom_terms)
 
-        for current_doc in documents:
+        rebuilt_postings: dict[str, list[int]] = {}
+        for doc_index, current_doc in enumerate(documents):
             tokenized_doc = self._tokenize(current_doc.get("content", ""))
             doc_counter = Counter(tokenized_doc)
             rebuilt_doc_lengths.append(len(tokenized_doc))
@@ -233,10 +236,12 @@ class BM25Searcher:
             total_doc_length += len(tokenized_doc)
             for unique_token in doc_counter:
                 self._doc_freq[unique_token] += 1
+                rebuilt_postings.setdefault(unique_token, []).append(doc_index)
 
         self._avg_doc_len = total_doc_length / max(self._total_docs, 1)
         self._doc_lengths = rebuilt_doc_lengths
         self._doc_counters = rebuilt_doc_counters
+        self._postings = rebuilt_postings
         self._rebuild_vocab_index()
         self._built = True
 
@@ -247,6 +252,7 @@ class BM25Searcher:
         self._avg_doc_len = 0.0
         self._doc_lengths = []
         self._doc_counters = []
+        self._postings = {}
         self._vocab_by_len = {}
         self._built = False
 
@@ -258,8 +264,10 @@ class BM25Searcher:
         tokenized_doc = self._tokenize(document.get("content", ""))
         doc_counter = Counter(tokenized_doc)
         self._doc_counters.append(doc_counter)
+        doc_index = len(self._documents) - 1
         for unique_token in doc_counter:
             self._doc_freq[unique_token] += 1
+            self._postings.setdefault(unique_token, []).append(doc_index)
         self._total_docs = len(self._documents)
         self._doc_lengths.append(len(tokenized_doc))
         self._avg_doc_len = sum(self._doc_lengths) / max(self._total_docs, 1)
@@ -285,38 +293,71 @@ class BM25Searcher:
             query_tokens = self._expand_with_synonyms(query_tokens)
 
         scored_documents = []
-        for document_index, current_doc in enumerate(self._documents):
+        # 走倒排索引：只对「至少命中一个查询词」的文档累加分数，等价于原先的全表扫描，
+        # 但省掉了对每个文档、每个查询词的重复遍历。
+        for query_token in query_tokens:
+            exact_doc_indices = self._postings.get(query_token)
+            if exact_doc_indices:
+                for document_index in exact_doc_indices:
+                    scored_documents.append((
+                        document_index,
+                        self._bm25_score(
+                            query_token,
+                            self._doc_counters[document_index][query_token],
+                            self._doc_lengths[document_index],
+                        ),
+                    ))
+
+            if not (fuzzy_match and 2 <= len(query_token) <= 16):
+                continue
+
+            # 模糊候选只取决于 token 与词表、与文档无关，整轮查询只计算一次
+            fuzzy_tokens = self._fuzzy_match(query_token, max_distance=1)
+            if not fuzzy_tokens:
+                continue
+
+            # 保持原语义：每个文档只取「模糊候选里第一个命中」的那个（精确命中过的不再参与）
+            exact_doc_set = set(exact_doc_indices) if exact_doc_indices else set()
+            fuzzy_assigned: set[int] = set()
+            for fuzzy_token in fuzzy_tokens:
+                for document_index in self._postings.get(fuzzy_token, ()):
+                    if document_index in exact_doc_set or document_index in fuzzy_assigned:
+                        continue
+                    fuzzy_assigned.add(document_index)
+                    scored_documents.append((
+                        document_index,
+                        self._bm25_score(
+                            fuzzy_token,
+                            self._doc_counters[document_index][fuzzy_token],
+                            self._doc_lengths[document_index],
+                        ) * 0.6,
+                    ))
+
+        # 同一文档可能被多个查询词命中，合并累加
+        merged_scores: dict[int, float] = {}
+        for document_index, score_value in scored_documents:
+            merged_scores[document_index] = merged_scores.get(document_index, 0.0) + score_value
+
+        # (-score, 文档下标)：同分时保持与原稳定排序一致的先后顺序
+        ranked_documents = sorted(merged_scores.items(), key=lambda item: (-item[1], item[0]))
+
+        results: List[dict] = []
+        for document_index, score_value in ranked_documents:
+            current_doc = self._documents[document_index]
             if filters and not match_filters(current_doc.get("metadata", {}), filters):
                 continue
+            results.append({
+                "chunk_id": current_doc.get("chunk_id", str(document_index)),
+                "doc_id": current_doc.get("metadata", {}).get("document_id", ""),
+                "content": current_doc.get("content", ""),
+                "metadata": current_doc.get("metadata", {}),
+                "score": score_value,
+                "source": "keyword",
+            })
+            if len(results) >= top_k:
+                break
 
-            doc_token_counter = self._doc_counters[document_index]
-            doc_length = self._doc_lengths[document_index]
-            if doc_length == 0:
-                continue
-
-            bm25_score_value = 0.0
-            for query_token in query_tokens:
-                if query_token in doc_token_counter and query_token in self._doc_freq:
-                    bm25_score_value += self._bm25_score(query_token, doc_token_counter[query_token], doc_length)
-                elif fuzzy_match and 2 <= len(query_token) <= 16:
-                    fuzzy_matches = self._fuzzy_match(query_token, max_distance=1)
-                    for fuzzy_token in fuzzy_matches:
-                        if fuzzy_token in doc_token_counter and fuzzy_token in self._doc_freq:
-                            bm25_score_value += self._bm25_score(fuzzy_token, doc_token_counter[fuzzy_token], doc_length) * 0.6
-                            break
-
-            if bm25_score_value > 0:
-                scored_documents.append({
-                    "chunk_id": current_doc.get("chunk_id", str(document_index)),
-                    "doc_id": current_doc.get("metadata", {}).get("document_id", ""),
-                    "content": current_doc.get("content", ""),
-                    "metadata": current_doc.get("metadata", {}),
-                    "score": bm25_score_value,
-                    "source": "keyword",
-                })
-
-        scored_documents.sort(key=lambda current_item: current_item["score"], reverse=True)
-        return scored_documents[:top_k]
+        return results
 
     def _bm25_score(self, token: str, tf: int, doc_len: int) -> float:
         doc_frequency = self._doc_freq.get(token, 0)
@@ -351,9 +392,10 @@ class BM25Searcher:
         self._doc_freq.clear()
         self._doc_lengths = []
         self._doc_counters = []
+        self._postings = {}
         self._total_docs = len(self._documents)
         total_doc_length = 0
-        for current_doc in self._documents:
+        for doc_index, current_doc in enumerate(self._documents):
             tokenized_doc = self._tokenize(current_doc.get("content", ""))
             doc_counter = Counter(tokenized_doc)
             self._doc_lengths.append(len(tokenized_doc))
@@ -361,6 +403,7 @@ class BM25Searcher:
             total_doc_length += len(tokenized_doc)
             for unique_token in doc_counter:
                 self._doc_freq[unique_token] += 1
+                self._postings.setdefault(unique_token, []).append(doc_index)
         self._avg_doc_len = total_doc_length / max(self._total_docs, 1)
         self._rebuild_vocab_index()
         self._built = bool(self._documents)

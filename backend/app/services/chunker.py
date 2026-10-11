@@ -69,8 +69,10 @@ class SemanticChunker:
         for i in range(1, len(sentences)):
             similarity = float(np.dot(current_emb, embeddings[i]))
             if similarity >= self.similarity_threshold and len("".join(current_chunk)) + len(sentences[i]) <= self.chunk_size:
+                # 先按「已并入的句数」更新簇中心，再收下新句；顺序反了会让新句被计两次，中心持续被拉偏
+                merged_count = len(current_chunk)
+                current_emb = (current_emb * merged_count + embeddings[i]) / (merged_count + 1)
                 current_chunk.append(sentences[i])
-                current_emb = (current_emb * len(current_chunk) + embeddings[i]) / (len(current_chunk) + 1)
             else:
                 chunks.append("".join(current_chunk))
                 current_chunk = [sentences[i]]
@@ -165,17 +167,19 @@ class StructuralChunker:
         for p in paragraphs:
             if len(current) + len(p) <= self.max_chunk_size:
                 current += ("\n\n" + p) if current else p
+                continue
+            # 缓冲已满：先落盘并清空，否则下一个短段落会拼回旧内容，造成重复分块
+            if current:
+                chunks.append(current)
+                current = ""
+            if len(p) > self.max_chunk_size:
+                step = self.max_chunk_size // 2
+                for i in range(0, len(p), step):
+                    sub = p[i:i + self.max_chunk_size].strip()
+                    if sub:
+                        chunks.append(sub)
             else:
-                if current:
-                    chunks.append(current)
-                if len(p) > self.max_chunk_size:
-                    step = self.max_chunk_size // 2
-                    for i in range(0, len(p), step):
-                        sub = p[i:i + self.max_chunk_size].strip()
-                        if sub:
-                            chunks.append(sub)
-                else:
-                    current = p
+                current = p
         if current:
             chunks.append(current)
         return chunks if chunks else [section]

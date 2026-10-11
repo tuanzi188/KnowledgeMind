@@ -14,6 +14,8 @@ import {
   BarChartOutlined,
   SafetyOutlined,
   MessageOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 import { ConnectionState } from './ConnectionStatus'
@@ -26,6 +28,8 @@ interface ChatHeaderProps {
   isDark: boolean
   stats: { total_chunks: number } | null
   connectionState: ConnectionState
+  sidebarVisible?: boolean
+  onToggleSidebar?: () => void
   onToggleTheme: () => void
   onOpenUpload: () => void
   onOpenDocumentManager: () => void
@@ -36,6 +40,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   isDark,
   stats,
   connectionState,
+  sidebarVisible,
+  onToggleSidebar,
   onToggleTheme,
   onOpenUpload,
   onOpenDocumentManager,
@@ -123,8 +129,13 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
     if (connectionState === 'connected') {
       return (
         <Tooltip title="后端服务已连接">
-          <div style={{ ...baseBadgeStyle, background: '#f6ffed', color: 'var(--color-success)' }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-success)', flexShrink: 0 }} />
+          <div style={{
+            ...baseBadgeStyle,
+            background: 'rgba(82, 196, 26, 0.12)',
+            color: 'var(--color-success)',
+            border: '1px solid rgba(82, 196, 26, 0.25)',
+          }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-success)', flexShrink: 0 }} />
             <span>已连接</span>
           </div>
         </Tooltip>
@@ -137,15 +148,16 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
           onClick={onReconnect}
           style={{
             ...baseBadgeStyle,
-            background: '#fff2f0',
+            background: 'rgba(255, 77, 79, 0.12)',
             color: 'var(--color-error)',
+            border: '1px solid rgba(255, 77, 79, 0.25)',
             cursor: 'pointer',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = '#ffdfdc' }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = '#fff2f0' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 77, 79, 0.2)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 77, 79, 0.12)' }}
         >
           <ReloadOutlined style={{ fontSize: 11, flexShrink: 0 }} />
-          <span>连接断开</span>
+          <span>服务重连</span>
         </div>
       </Tooltip>
     )
@@ -164,14 +176,33 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         transition: 'background var(--transition-normal)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {onToggleSidebar && (
+          <Tooltip title={sidebarVisible ? '收起历史会话' : '展开历史会话'}>
+            <Button
+              type="text"
+              size="small"
+              icon={sidebarVisible ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+              onClick={onToggleSidebar}
+              style={{
+                color: 'var(--color-text-secondary)',
+                width: 32,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            />
+          </Tooltip>
+        )}
+
         <div
           style={{
-            width: 36, height: 36,
+            width: 34, height: 34,
             borderRadius: 'var(--radius-md)',
             background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 18, fontWeight: 700, flexShrink: 0,
+            color: '#fff', fontSize: 17, fontWeight: 700, flexShrink: 0,
           }}
         >
           K

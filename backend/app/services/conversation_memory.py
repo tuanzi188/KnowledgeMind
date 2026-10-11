@@ -307,12 +307,12 @@ class ConversationMemory:
             if self._store is not None and self._sessions:
                 return
             if self._store is None:
-                self._store = _create_session_store(self._persist_dir, self._session_ttl)
+                self._store = _create_session_store(self._persist_dir, self.session_ttl)
             sessions = await self._store.load_all()
             # Redis 加载失败时自动回退到 JSON 存储
             if not sessions and isinstance(self._store, RedisSessionStore):
                 logger.info("Redis returned no sessions, falling back to JSON store")
-                self._store = JsonSessionStore(self._persist_dir, self._session_ttl)
+                self._store = JsonSessionStore(self._persist_dir, self.session_ttl)
                 sessions = await self._store.load_all()
             self._sessions.update(sessions)
             if sessions:

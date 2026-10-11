@@ -10,6 +10,7 @@ export interface Message {
   confidence?: number
   model?: string
   mode?: string
+  reasoning_content?: string
   isFallback?: boolean
   timestamp: number
 }
@@ -22,6 +23,7 @@ export interface UseChatReturn {
   setConversationId: (id: string | undefined) => void
   setMessages: (messages: Message[]) => void
   sendMessage: (query: string) => Promise<void>
+  stopGeneration: () => void
   loadHistoryMessages: (turns: { query: string; answer: string; timestamp: number }[]) => void
   startNew: () => void
 }
@@ -66,6 +68,7 @@ export function useChat(
             confidence: result.confidence,
             model: result.model_used,
             mode: result.reasoning_mode_used,
+            reasoning_content: result.reasoning_content,
             isFallback: result.is_fallback,
             timestamp: Date.now(),
           }
@@ -92,7 +95,21 @@ export function useChat(
         abortController.signal,
       )
     } catch (err: any) {
-      if (err?.name !== 'AbortError') {
+      if (err?.name === 'AbortError') {
+        // 用户主动停止生成，保存当前已流式输出的文本
+        setStreamingContent(currentStreaming => {
+          if (currentStreaming && currentStreaming.trim()) {
+            const stoppedMsg: Message = {
+              id: `stopped-${Date.now()}`,
+              role: 'assistant',
+              content: currentStreaming,
+              timestamp: Date.now(),
+            }
+            setMessages(prev => [...prev, stoppedMsg])
+          }
+          return ''
+        })
+      } else {
         console.error('发送消息失败:', err)
         const detail = extractErrorMessage(err, '请求失败，请检查网络连接或稍后重试')
         const code = err?.response?.status
@@ -112,6 +129,13 @@ export function useChat(
       abortRef.current = null
     }
   }, [loading, conversationId, onConversationUpdate])
+
+  const stopGeneration = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+  }, [])
 
   const loadHistoryMessages = useCallback(
     (turns: { query: string; answer: string; timestamp: number }[]) => {
@@ -148,6 +172,7 @@ export function useChat(
     setConversationId,
     setMessages,
     sendMessage,
+    stopGeneration,
     loadHistoryMessages,
     startNew,
   }

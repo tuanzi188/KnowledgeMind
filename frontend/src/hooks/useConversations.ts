@@ -21,7 +21,8 @@ export function useConversations(): UseConversationsReturn {
     setConversationsLoading(true)
     try {
       const result = await getConversations()
-      setConversations(result.conversations)
+      // 兜底：接口返回结构异常时不至于让整页因 undefined 而白屏
+      setConversations(result?.conversations ?? [])
     } catch (err) {
       console.error('加载对话列表失败:', err)
     } finally {

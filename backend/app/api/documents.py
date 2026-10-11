@@ -17,6 +17,8 @@ from app.services.keyword_search import get_bm25_searcher
 from app.services.graph_search import graph_searcher
 from app.services.embedding import get_embedding
 from app.services.task_queue import task_queue
+from app.services.hybrid_search import clear_retrieval_cache
+from app.services.rag_engine import clear_query_caches
 from app.services.audit_logger import audit_logger, AuditAction, AuditStatus, AuditEvent
 from app.services.access_control import (
     can_access,
@@ -84,6 +86,10 @@ async def _index_document_task(chunks_data: list[dict], parsed_content: str, doc
         for entity in entities:
             graph_searcher.add_entity(entity["name"], chunk_ids, document_id=doc_id)
         graph_searcher.save_to_disk()
+
+    # 6. 新语料已入库，清空检索/查询缓存，避免 TTL 内仍返回旧结果
+    clear_retrieval_cache()
+    clear_query_caches()
 
     logger.info("Indexing complete for document %s: %s chunks", doc_id, len(chunks))
     return {"chunks_indexed": len(chunks)}
@@ -338,6 +344,10 @@ async def delete_document(document_id: str, request: Request):
     bm25.save_to_disk()
     graph_searcher.delete_document(document_id)
     graph_searcher.save_to_disk()
+
+    # 语料已变更，清空检索/查询缓存
+    clear_retrieval_cache()
+    clear_query_caches()
 
     duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
     await audit_logger.log(

@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 _retrieval_cache = TimedLRUCache(maxsize=256, ttl_seconds=300)
 
 
+def clear_retrieval_cache():
+    """文档上传/删除后调用：否则同一查询在 TTL 内会持续返回旧语料的结果。"""
+    _retrieval_cache.clear()
+
+
 class HybridRetriever:
     def __init__(self):
         self.weight_profiles = {

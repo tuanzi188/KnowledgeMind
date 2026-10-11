@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import { Input, Button, Tooltip, Popover, Typography } from 'antd'
 import {
   SendOutlined,
+  StopOutlined,
   ClearOutlined,
   FileSearchOutlined,
   PlusCircleOutlined,
@@ -12,6 +13,7 @@ const { Text } = Typography
 interface ChatInputProps {
   loading: boolean
   onSend: (text: string) => void
+  onStop?: () => void
   onClearContext?: () => void
   onNewConversation?: () => void
   onReferenceDocument?: () => void
@@ -20,6 +22,7 @@ interface ChatInputProps {
 const ChatInput: React.FC<ChatInputProps> = ({
   loading,
   onSend,
+  onStop,
   onClearContext,
   onNewConversation,
   onReferenceDocument,
@@ -38,6 +41,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && loading && onStop) {
+      e.preventDefault()
+      onStop()
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -50,12 +58,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }
 
   const shortcutContent = (
-    <div style={{ minWidth: 180 }}>
+    <div style={{ minWidth: 200 }}>
       <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 2.2 }}>
         <div><Text keyboard>Enter</Text> 发送消息</div>
         <div><Text keyboard>Shift</Text> + <Text keyboard>Enter</Text> 换行</div>
+        <div><Text keyboard>Esc</Text> 停止生成 / 清空输入</div>
         <div><Text keyboard>Ctrl</Text> + <Text keyboard>K</Text> 新建对话</div>
-        <div><Text keyboard>Esc</Text> 清空输入</div>
       </div>
     </div>
   )
@@ -124,9 +132,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="输入问题，基于上传文档智能问答"
+          placeholder={loading ? "输入问题，基于知识库智能问答 (正在生成，可按 Esc 停止)" : "输入问题，基于知识库智能问答 (Enter 发送)"}
           autoSize={{ minRows: 1, maxRows: 6 }}
-          disabled={loading}
           variant="borderless"
           style={{
             flex: 1,
@@ -137,39 +144,66 @@ const ChatInput: React.FC<ChatInputProps> = ({
           }}
         />
 
-        {/* 发送按钮 */}
-        <Tooltip title={isEmpty ? '请输入内容' : '发送 (Enter)'}>
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            aria-label="发送"
-            onClick={handleSend}
-            loading={loading}
-            disabled={isEmpty || loading}
-            className="btn-hover"
-            style={{
-              minWidth: 36,
-              height: 36,
-              borderRadius: 'var(--radius-md)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: isEmpty ? 0.4 : 1,
-              transition: 'all var(--transition-fast)',
-              flexShrink: 0,
-            }}
-          />
-        </Tooltip>
+        {/* 发送 / 停止生成 按钮 */}
+        {loading && onStop ? (
+          <Tooltip title="停止生成 (Esc)">
+            <Button
+              danger
+              type="primary"
+              icon={<StopOutlined />}
+              aria-label="停止生成"
+              onClick={onStop}
+              className="btn-hover"
+              style={{
+                minWidth: 36,
+                height: 36,
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all var(--transition-fast)',
+                flexShrink: 0,
+              }}
+            />
+          </Tooltip>
+        ) : (
+          <Tooltip title={isEmpty ? '请输入内容' : '发送 (Enter)'}>
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              aria-label="发送"
+              onClick={handleSend}
+              disabled={isEmpty || loading}
+              className="btn-hover"
+              style={{
+                minWidth: 36,
+                height: 36,
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: isEmpty || loading ? 0.4 : 1,
+                transition: 'all var(--transition-fast)',
+                flexShrink: 0,
+              }}
+            />
+          </Tooltip>
+        )}
       </div>
 
-      {/* 底部快捷键提示 */}
+      {/* 底部快捷键与提示 */}
       <div
         style={{
           display: 'flex',
-          justifyContent: 'flex-end',
+          justifyContent: 'space-between',
+          alignItems: 'center',
           marginTop: 6,
+          padding: '0 4px',
         }}
       >
+        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          {loading ? '⚡ 正在流式生成回答' : '知识库检索已就绪'}
+        </span>
         <Popover
           content={shortcutContent}
           title="快捷键说明"
@@ -185,7 +219,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               transition: 'color var(--transition-fast)',
             }}
           >
-            Enter 发送 · Shift+Enter 换行
+            Enter 发送 · Shift+Enter 换行 · Esc 停止
           </Text>
         </Popover>
       </div>

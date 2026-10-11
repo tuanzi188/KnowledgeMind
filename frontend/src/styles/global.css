@@ -9,10 +9,10 @@
   --color-text: #262626;
   --color-text-secondary: #8c8c8c;
   --color-text-tertiary: #bfbfbf;
-  --color-bg: #f5f5f5;
+  --color-bg: #f9fafb;
   --color-bg-white: #ffffff;
-  --color-border: #e8e8e8;
-  --color-border-light: #f0f0f0;
+  --color-border: #e5e7eb;
+  --color-border-light: #f3f4f6;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -176,6 +176,28 @@ body {
   margin: 8px 0;
   color: var(--color-text-secondary);
 }
+
+/* ===== 打字机光标动画 ===== */
+@keyframes cursorBlink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 15px;
+  margin-left: 4px;
+  vertical-align: -2px;
+  background-color: var(--color-primary);
+  border-radius: 1px;
+  animation: cursorBlink 0.9s infinite ease-in-out;
+}
+
 
 /* ===== 滚动条 ===== */
 ::-webkit-scrollbar {

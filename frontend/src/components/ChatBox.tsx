@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { message, Spin, Tag, Typography } from 'antd'
+import ReactMarkdown from 'react-markdown'
 import { Citation, uploadDocument, getStats } from '../api/client'
 import { useChat } from '../hooks/useChat'
 import { useConversations } from '../hooks/useConversations'
@@ -44,6 +45,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
     loading,
     streamingContent,
     sendMessage,
+    stopGeneration,
     loadHistoryMessages,
     startNew,
     setConversationId,
@@ -198,6 +200,8 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
         <ChatHeader
           isDark={!!isDark}
           stats={stats}
+          sidebarVisible={sidebarVisible}
+          onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
           onToggleTheme={onToggleTheme || (() => {})}
           onOpenUpload={() => setUploadOpen(true)}
           onOpenDocumentManager={() => setDocumentManagerOpen(true)}
@@ -232,6 +236,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
               confidence={msg.confidence}
               model={msg.model}
               mode={msg.mode}
+              reasoning_content={msg.reasoning_content}
               isFallback={msg.isFallback}
               onCitationClick={setSelectedCitation}
               onCopy={copyToClipboard}
@@ -239,24 +244,27 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
           ))}
 
           {loading && streamingContent && (
-            <div className="animate-fade-in" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <div className="animate-fade-in" style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-start' }}>
               <div style={{
-                width: 32, height: 32, borderRadius: 'var(--radius-md)',
-                background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+                width: 34, height: 34, borderRadius: 'var(--radius-md)',
+                background: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
                 display: 'flex', alignItems: 'center',
                 justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700,
                 flexShrink: 0,
+                boxShadow: 'var(--shadow-sm)',
               }}>K</div>
               <div style={{
                 background: 'var(--color-bg-white)',
                 borderRadius: 'var(--radius-lg)',
                 padding: '12px 16px',
                 boxShadow: 'var(--shadow-sm)',
+                border: '1px solid var(--color-border)',
                 maxWidth: '85%',
-                transition: 'background var(--transition-normal)',
+                transition: 'background var(--transition-normal), border var(--transition-normal)',
               }}>
-                <div className="markdown-body">
-                  {streamingContent}
+                <div className="markdown-body" style={{ color: 'var(--color-text)', fontSize: 14, lineHeight: 1.6 }}>
+                  <ReactMarkdown>{streamingContent}</ReactMarkdown>
+                  <span className="streaming-cursor" />
                 </div>
               </div>
             </div>
@@ -289,6 +297,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
         <ChatInput
           loading={loading}
           onSend={sendMessage}
+          onStop={stopGeneration}
           onNewConversation={handleNewConversation}
           onReferenceDocument={() => setDocumentManagerOpen(true)}
         />

@@ -5,6 +5,7 @@ import zhCN from 'antd/locale/zh_CN'
 import { UserProvider } from './contexts/UserContext'
 import ChatBox from './components/ChatBox'
 import PageShell from './components/PageShell'
+import KanbanBoard from './components/KanbanBoard'
 import AnalyticsDashboard from './pages/AnalyticsDashboard'
 import AuditLogs from './pages/AuditLogs'
 
@@ -50,6 +51,7 @@ const App: React.FC = () => {
                 </PageShell>
               }
             />
+            <Route path="/kanban" element={<KanbanBoard />} />
           </Routes>
         </BrowserRouter>
       </ConfigProvider>

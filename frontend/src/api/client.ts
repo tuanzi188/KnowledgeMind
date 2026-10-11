@@ -228,6 +228,7 @@ export interface StreamDoneResult {
   confidence: number
   model_used: string
   reasoning_mode_used: string
+  reasoning_content?: string
   is_fallback: boolean
   answer: string
 }
@@ -276,6 +277,7 @@ export async function sendChatStream(
   const decoder = new TextDecoder()
   let fullAnswer = ''
   let buffer = ''
+  let finished = false
 
   try {
     while (true) {
@@ -304,9 +306,11 @@ export async function sendChatStream(
               confidence: event.confidence_score || 0,
               model_used: event.model_used || '',
               reasoning_mode_used: '',
+              reasoning_content: event.reasoning_content || '',
               is_fallback: event.is_fallback || false,
               answer: fullAnswer,
             })
+            finished = true
           } else if (event.type === 'error') {
             onError(new Error(event.content), event.code)
           }
@@ -314,6 +318,10 @@ export async function sendChatStream(
           console.warn('SSE line parse failed:', e)
         }
       }
+
+      // 收到 done 即结束读取，不再只依赖服务端关流——否则经 keep-alive 代理时
+      // 连接不关闭，UI 会一直停在「正在生成」状态。
+      if (finished) break
     }
   } finally {
     reader.releaseLock()

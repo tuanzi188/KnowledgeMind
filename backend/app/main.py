@@ -374,7 +374,7 @@ async def deep_health_check():
 
     # 7. 任务队列状态
     try:
-        queue_size = task_queue.queue.qsize()
+        queue_size = task_queue.pending_count()
         checks["task_queue"] = {
             "status": "healthy",
             "pending_tasks": queue_size,

@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 _intent_cache = TimedLRUCache(maxsize=256, ttl_seconds=300)
 _rewrite_cache = TimedLRUCache(maxsize=256, ttl_seconds=300)
 
+
+def clear_query_caches():
+    """文档上传/删除后调用：意图分类与查询改写不依赖语料，但保持三类缓存同步失效便于推理一致性。"""
+    _intent_cache.clear()
+    _rewrite_cache.clear()
+
 _ACL_OVERFETCH_MULTIPLIER = 5
 
 _CITATION_PATTERN = re.compile(r'\[引用:\s*(.+?),\s*(.+?)\]')
