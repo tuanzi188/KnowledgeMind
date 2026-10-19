@@ -157,7 +157,6 @@ async def _ask(query: str) -> dict:
 def _summarize(rows: list) -> dict:
     neg = [r for r in rows if r["kind"] == "negative"]
     pos = [r for r in rows if r["kind"] == "positive"]
-    clean = [r for r in neg if r["label"] == "REFUSE_CLEAN"]
     clean_ref = [r for r in neg if r["label"] in {"REFUSE_CLEAN", "REFUSE_WITH_REFERENCE"}]
     fab = [r for r in neg if r["label"] in {"REFUSE_THEN_FABRICATE", "ANSWER_FABRICATE"}]
     pos_refused = [r for r in pos if r["label"] in {"REFUSE", "REFUSE_CLEAN"}]
@@ -165,7 +164,6 @@ def _summarize(rows: list) -> dict:
     return {
         "negative_n": n_neg,
         "positive_n": n_pos,
-        "strict_clean_refusal_rate": round(len(clean) / n_neg, 4) if n_neg else 0,
         "clean_refusal_rate": round(len(clean_ref) / n_neg, 4) if n_neg else 0,
         "fabrication_rate": round(len(fab) / n_neg, 4) if n_neg else 0,
         "false_refusal_rate": round(len(pos_refused) / n_pos, 4) if n_pos else 0,
@@ -174,9 +172,6 @@ def _summarize(rows: list) -> dict:
                                  "ANSWER_FABRICATE", "ANSWER_IRRELEVANT", "UNKNOWN")},
         "positive_label_dist": {k: sum(1 for r in pos if r["label"] == k) for k in
                                 ("ANSWER_GROUNDED", "REFUSE", "ANSWER_VAGUE", "UNKNOWN")},
-        "negative_keyword_vs_judge_agreement": round(
-            sum(1 for r in neg if r["keyword_refusal"] == (r["label"] in {"REFUSE_CLEAN", "REFUSE_WITH_REFERENCE", "REFUSE_THEN_FABRICATE"}))
-            / n_neg, 4) if n_neg else 0,
     }
 
 
