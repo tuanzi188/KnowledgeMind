@@ -1,0 +1,33 @@
+{
+  "corpus_chunks": 33,
+  "candidate_k": 25,
+  "queries": 60,
+  "candidate_pool_ratio": 0.7576,
+  "per_mode": {
+    "dense": {
+      "recall@25": 1.0,
+      "avg_candidate_size": 25.0,
+      "distinct_in_union": 33
+    },
+    "bm25": {
+      "recall@25": 0.8833,
+      "avg_candidate_size": 11.93,
+      "distinct_in_union": 33
+    },
+    "hybrid": {
+      "recall@25": 1.0,
+      "avg_candidate_size": 25.0,
+      "distinct_in_union": 33
+    },
+    "hybrid_rw": {
+      "recall@25": 1.0,
+      "avg_candidate_size": 25.0,
+      "distinct_in_union": 33
+    }
+  },
+  "candidate_overlap": {
+    "dense_vs_hybrid": 0.942,
+    "dense_vs_hybrid_rw": 0.942,
+    "dense_vs_bm25": 0.4187
+  }
+}
