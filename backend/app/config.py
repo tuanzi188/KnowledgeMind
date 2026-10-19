@@ -102,8 +102,14 @@ RETRIEVAL_CONFIG: Dict[str, Any] = {
     "top_k_rerank": 5,
     "rrf_k": 60,
     "similarity_threshold": 0.6,
-    "query_rewrite_enabled": os.getenv("QUERY_REWRITE_ENABLED", "true").lower() == "true",
+    # 实测：全局开启查询改写会让 recall@3 下降（0.8114 → 0.7781），文档摘要场景尤甚，
+    # 故默认关闭，仅对实测不亏的场景开启（见 rewrite_query_types）
+    "query_rewrite_enabled": os.getenv("QUERY_REWRITE_ENABLED", "false").lower() == "true",
+    "rewrite_query_types": {"complex_analysis", "comparison"},
     "max_rewrite_queries": int(os.getenv("MAX_REWRITE_QUERIES", 3)),
+    # l3（LLM 重排）只在实测有增益的查询类型上触发；关系推理零增益、文档摘要持平、
+    # 精确查找/概念解释已饱和，均不应付出 1.5k token / 5.8s 的代价
+    "l3_query_types": {"complex_analysis", "comparison"},
 }
 
 SERVER_CONFIG: Dict[str, Any] = {

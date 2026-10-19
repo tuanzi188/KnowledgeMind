@@ -74,13 +74,13 @@ async def _execute_retrieval_pipeline(
     if user_context is not None and not user_context.is_admin:
         retrieved_docs = filter_accessible_records(user_context, retrieved_docs)
 
-    complexity = intent.get("complexity", 3)
-    if complexity >= 4 or query_type in {"comparison", "relationship_query", "document_summary"}:
-        rerank_strategy = "l3"
-    elif len(retrieved_docs) <= 20:
-        rerank_strategy = "l2"
-    else:
-        rerank_strategy = "l1"
+    # 选档依据改为「查询类型枚举」，不再依赖模型返回的 complexity：
+    # 后者与人工标注的一致率仅约 48% 且两次运行结果不同，会让同一查询有时付 5.8s、有时不付。
+    # 默认档位用 l2 而非 l1：实测 l1 规则重排在三个场景均为负收益（整体 recall@3 0.7781 → 0.7711），
+    # 而 l2（Cross-Encoder）是 0 token 的本地模型——没有理由为了 0.6ms 牺牲 6 个点的 recall@3。
+    # l1 仅保留为 Cross-Encoder 不可用时的兜底档（由 reranker 内部回退）。
+    l3_query_types = set(RETRIEVAL_CONFIG.get("l3_query_types") or [])
+    rerank_strategy = "l3" if query_type in l3_query_types else "l2"
 
     reranked = await reranker.rerank(query, retrieved_docs, top_k=top_k * 2, strategy=rerank_strategy)
 
@@ -651,9 +651,10 @@ async def _build_retrieval_queries(query: str, intent: dict) -> List[str]:
     if not RETRIEVAL_CONFIG.get("query_rewrite_enabled", True):
         return retrieval_query_list
 
-    query_complexity = int(intent.get("complexity", 3) or 3)
     query_type = intent.get("query_type", "complex_analysis")
-    if query_complexity <= 1 and query_type == "simple_fact":
+    # 实测：全局改写会让 recall@3 下降，仅在白名单场景（见 config.rewrite_query_types）开启
+    rewrite_query_types = set(RETRIEVAL_CONFIG.get("rewrite_query_types") or [])
+    if rewrite_query_types and query_type not in rewrite_query_types:
         return retrieval_query_list
 
     cached_rewrite = _rewrite_cache.get(query)
