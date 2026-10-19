@@ -2,13 +2,18 @@
 
 用法：
     cd backend
-    python -m app.mcp.demo_client            # 走 stdio 传输，起一个子进程做服务端
+    python -m app.mcp.demo_client                          # stdio：起子进程做服务端
+    python -m app.mcp.demo_client --url http://127.0.0.1:8931/mcp   # 连已启动的 http 服务
+
+    # 另开一个终端先起服务：
+    # python -m app.mcp.server --transport http --port 8931
 
 输出：握手信息 → 工具清单 → 一次检索调用 → 一次出处回查。
 
 注意：MCP v2 会把返回列表拆成多个 content block（每块一个 JSON），
 不要只读 content[0] —— 这是接入时最容易踩的坑。
 """
+import argparse
 import asyncio
 import json
 import sys
@@ -22,12 +27,20 @@ from mcp import Client, StdioServerParameters                             # noqa
 
 
 async def main() -> None:
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "app.mcp.server"],
-        cwd=str(_BACKEND_DIR),
-    )
-    async with Client(params) as client:
+    parser = argparse.ArgumentParser(description="KnowledgeMind MCP 客户端示例")
+    parser.add_argument("--url", default="", help="已启动的 streamable-http 服务地址；留空则用 stdio")
+    args = parser.parse_args()
+
+    if args.url:
+        target = args.url
+    else:
+        target = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "app.mcp.server"],
+            cwd=str(_BACKEND_DIR),
+        )
+
+    async with Client(target) as client:
         info = client.server_info
         print(f"握手成功：{info.name} v{info.version}，协议 {client.protocol_version}")
 
