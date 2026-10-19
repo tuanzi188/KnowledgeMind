@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { message } from 'antd'
-import { sendChat, sendChatStream, Citation, extractErrorMessage } from '../api/client'
+import { sendChatStream, Citation, extractErrorMessage } from '../api/client'
 
 export interface Message {
   id: string
@@ -36,6 +36,17 @@ export function useChat(
   const [streamingContent, setStreamingContent] = useState('')
   const [conversationId, setConversationId] = useState<string | undefined>()
   const abortRef = useRef<AbortController | null>(null)
+  const streamingRef = useRef('')
+  const discardOnAbortRef = useRef(false)
+
+  // 组件卸载时终止在途请求，避免卸载后继续 setState / 泄漏连接
+  useEffect(() => {
+    return () => {
+      discardOnAbortRef.current = true
+      abortRef.current?.abort()
+      abortRef.current = null
+    }
+  }, [])
 
   const sendMessage = useCallback(async (query: string) => {
     if (loading) return
@@ -49,17 +60,22 @@ export function useChat(
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
     setStreamingContent('')
+    streamingRef.current = ''
+    discardOnAbortRef.current = false
+    let receivedDone = false
 
     const abortController = new AbortController()
     abortRef.current = abortController
 
     try {
-      const response = await sendChatStream(
+      await sendChatStream(
         query,
         (token) => {
-          setStreamingContent(prev => prev + token)
+          streamingRef.current += token
+          setStreamingContent(streamingRef.current)
         },
         (result) => {
+          receivedDone = true
           const assistantMsg: Message = {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
@@ -73,6 +89,7 @@ export function useChat(
             timestamp: Date.now(),
           }
           setMessages(prev => [...prev, assistantMsg])
+          streamingRef.current = ''
           setStreamingContent('')
           setConversationId(result.conversation_id)
           onConversationUpdate?.()
@@ -89,26 +106,39 @@ export function useChat(
             timestamp: Date.now(),
           }
           setMessages(prev => [...prev, errMsg])
+          streamingRef.current = ''
           setStreamingContent('')
         },
         conversationId,
         abortController.signal,
       )
+
+      // 流正常结束但没收到 done（网络中断 / 代理断开 / 后端异常退出）：
+      // 保留已输出的部分内容并提示，而不是静默丢弃。
+      if (!receivedDone && !abortController.signal.aborted && streamingRef.current.trim()) {
+        setMessages(prev => [...prev, {
+          id: `partial-${Date.now()}`,
+          role: 'assistant',
+          content: `${streamingRef.current}\n\n> 连接中断，以上为已生成的部分内容。`,
+          timestamp: Date.now(),
+        }])
+        streamingRef.current = ''
+        setStreamingContent('')
+      }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        // 用户主动停止生成，保存当前已流式输出的文本
-        setStreamingContent(currentStreaming => {
-          if (currentStreaming && currentStreaming.trim()) {
-            const stoppedMsg: Message = {
-              id: `stopped-${Date.now()}`,
-              role: 'assistant',
-              content: currentStreaming,
-              timestamp: Date.now(),
-            }
-            setMessages(prev => [...prev, stoppedMsg])
+        // 用户主动停止：保留已流式输出的文本；切换会话/卸载导致的 abort 直接丢弃
+        if (!discardOnAbortRef.current && streamingRef.current.trim()) {
+          const stoppedMsg: Message = {
+            id: `stopped-${Date.now()}`,
+            role: 'assistant',
+            content: streamingRef.current,
+            timestamp: Date.now(),
           }
-          return ''
-        })
+          setMessages(prev => [...prev, stoppedMsg])
+        }
+        streamingRef.current = ''
+        setStreamingContent('')
       } else {
         console.error('发送消息失败:', err)
         const detail = extractErrorMessage(err, '请求失败，请检查网络连接或稍后重试')
@@ -122,16 +152,19 @@ export function useChat(
           timestamp: Date.now(),
         }
         setMessages(prev => [...prev, errMsg])
+        streamingRef.current = ''
         setStreamingContent('')
       }
     } finally {
       setLoading(false)
       abortRef.current = null
+      discardOnAbortRef.current = false
     }
   }, [loading, conversationId, onConversationUpdate])
 
   const stopGeneration = useCallback(() => {
     if (abortRef.current) {
+      discardOnAbortRef.current = false
       abortRef.current.abort()
       abortRef.current = null
     }
@@ -159,6 +192,11 @@ export function useChat(
   )
 
   const startNew = useCallback(() => {
+    // 切换新会话时终止在途请求，避免旧流把回答写进新会话
+    discardOnAbortRef.current = true
+    abortRef.current?.abort()
+    abortRef.current = null
+    streamingRef.current = ''
     setMessages([])
     setConversationId(undefined)
     setStreamingContent('')

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { message, Spin, Tag, Typography } from 'antd'
+import { message, Spin, Typography } from 'antd'
 import ReactMarkdown from 'react-markdown'
 import { Citation, uploadDocument, getStats } from '../api/client'
 import { useChat } from '../hooks/useChat'
@@ -12,7 +12,7 @@ import WelcomeScreen from './WelcomeScreen'
 import CitationPanel from './CitationPanel'
 import DocumentManager from './DocumentManager'
 import DocumentUpload from './DocumentUpload'
-import { ConnectionState } from './ConnectionStatus'
+import { ConnectionState } from '../types/connection'
 
 const { Text } = Typography
 
@@ -44,6 +44,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
     messages,
     loading,
     streamingContent,
+    conversationId: chatConversationId,
     sendMessage,
     stopGeneration,
     loadHistoryMessages,
@@ -52,6 +53,10 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
   } = useChat(() => {
     loadConversations()
   })
+
+  // 单一状态源：发送成功后 useChat 会拿到后端返回的会话 id，侧栏高亮以此为准，
+  // 避免 activeConversationId 与 chatConversationId 各说各话。
+  const currentConversationId = chatConversationId || activeConversationId
 
   // 检测连接状态
   useEffect(() => {
@@ -101,7 +106,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
     try {
       await deleteConv(convId)
       message.success('对话已删除')
-      if (activeConversationId === convId) {
+      if (currentConversationId === convId) {
         startNew()
       }
     } catch (err) {
@@ -177,7 +182,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ isDark, onToggleTheme }) => {
         visible={sidebarVisible}
         conversations={conversations}
         loading={conversationsLoading}
-        activeConversationId={activeConversationId}
+        activeConversationId={currentConversationId}
         onNewConversation={handleNewConversation}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}

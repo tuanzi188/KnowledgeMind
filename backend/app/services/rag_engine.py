@@ -1,7 +1,6 @@
 import re
 import asyncio
 import logging
-from datetime import datetime
 from typing import List, Optional, AsyncIterator
 
 from app.config import RETRIEVAL_CONFIG, SERVER_CONFIG
@@ -21,7 +20,7 @@ from app.services.hybrid_search import hybrid_retriever
 from app.services.reranker import reranker
 from app.services.vector_store import vector_store
 from app.services.conversation_memory import conversation_memory
-from app.services.prompts import SYSTEM_PROMPT, FALLBACK_SYSTEM_PROMPT
+from app.services.prompts import FALLBACK_SYSTEM_PROMPT
 from app.models.chat import Citation, ChatSegment, ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -86,9 +85,10 @@ async def _execute_retrieval_pipeline(
 
     context, used_docs = await reranker.assemble_context(reranked, max_tokens=5000)
 
-    system_prompt_text = SYSTEM_PROMPT.format(current_date=datetime.now().strftime("%Y-%m-%d"))
     history_text = await conversation_memory.format_history_for_prompt(conversation_id, max_turns=5)
-    full_context = f"{system_prompt_text}\n\n参考资料：\n{context}{history_text}"
+    # system prompt 由各模型客户端统一拼装（带真实日期），这里只组织参考资料与历史对话，
+    # 避免同一段 system prompt 被拼两遍、且第二遍日期为空。
+    full_context = f"{context}{history_text}"
 
     return {
         "intent": intent,

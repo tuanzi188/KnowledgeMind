@@ -1,3 +1,5 @@
+import ast
+import json
 import logging
 from typing import Any, Dict, List
 
@@ -18,7 +20,22 @@ def _normalize_list(value: Any) -> List[str]:
     if value is None:
         return []
     if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
+        text = value.strip()
+        if not text:
+            return []
+        # 向量库把 list 存成 JSON 字符串（兼容旧版本写入的 Python repr，如 "['a', 'b']"）
+        if text.startswith(("[", "{")):
+            parsed: Any = None
+            try:
+                parsed = json.loads(text)
+            except (ValueError, TypeError):
+                try:
+                    parsed = ast.literal_eval(text)
+                except (ValueError, SyntaxError, TypeError):
+                    parsed = None
+            if isinstance(parsed, (list, tuple, set)):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        return [item.strip() for item in text.split(",") if item.strip()]
     if isinstance(value, (list, tuple)):
         return [str(item).strip() for item in value if str(item).strip()]
     return [str(value).strip()] if str(value).strip() else []

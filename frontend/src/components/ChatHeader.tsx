@@ -18,7 +18,7 @@ import {
   MenuUnfoldOutlined,
 } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
-import { ConnectionState } from './ConnectionStatus'
+import { ConnectionState } from '../types/connection'
 import { useUser } from '../contexts/UserContext'
 import UserSettingsDrawer from './UserSettingsDrawer'
 

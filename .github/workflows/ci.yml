@@ -24,6 +24,12 @@ jobs:
           pip install pytest pytest-asyncio pytest-cov httpx
       - name: Run tests
         run: pytest --cov=app --cov-report=xml -v
+      - name: MCP server import smoke
+        run: python -c "import app.mcp.server as s; assert callable(s.search_kb) and callable(s.get_citation); print('mcp tools importable')"
+      - name: Verify OpenAPI schema is up to date
+        run: |
+          python scripts/generate_schema.py
+          git diff --exit-code -- frontend/openapi.json
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
@@ -43,6 +49,10 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm ci
+      - name: Verify generated API types are up to date
+        run: |
+          npx openapi-typescript openapi.json -o src/api/generated.ts
+          git diff --exit-code -- src/api/generated.ts
       - name: Run tests
         run: npx vitest run
       - name: Build frontend

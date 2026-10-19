@@ -81,7 +81,6 @@ OLLAMA_CONFIG: Dict[str, Any] = {
 }
 
 EMBEDDING_CONFIG: Dict[str, Any] = {
-    "provider": os.getenv("EMBEDDING_PROVIDER", "sentence_transformers"),
     "model_name": os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5"),
     "device": os.getenv("EMBEDDING_DEVICE", "auto"),
     "batch_size": int(os.getenv("EMBEDDING_BATCH_SIZE", 32)),
@@ -91,19 +90,15 @@ EMBEDDING_CONFIG: Dict[str, Any] = {
 }
 
 VECTOR_STORE_CONFIG: Dict[str, Any] = {
-    "type": os.getenv("VECTOR_STORE_TYPE", "chroma"),
     "persist_dir": str(DATA_DIR / "chroma_db"),
     "collection_name": "knowledge_mind",
     "embedding_dimension": int(os.getenv("VECTOR_EMBEDDING_DIMENSION", 512)),
 }
 
 RETRIEVAL_CONFIG: Dict[str, Any] = {
-    "top_k_retrieval": 10,
-    "top_k_rerank": 5,
     "rrf_k": 60,
-    "similarity_threshold": 0.6,
-    # 实测：全局开启查询改写会让 recall@3 下降（0.8114 → 0.7781），文档摘要场景尤甚，
-    # 故默认关闭，仅对实测不亏的场景开启（见 rewrite_query_types）
+    # 查询改写默认关闭：当前改写对照实验存在候选池混淆（对照路用 25 候选、基线用 5 候选），
+    # 结论不可复现，待重做同候选池 A/B 后再决定是否开启。
     "query_rewrite_enabled": os.getenv("QUERY_REWRITE_ENABLED", "false").lower() == "true",
     "rewrite_query_types": {"complex_analysis", "comparison"},
     "max_rewrite_queries": int(os.getenv("MAX_REWRITE_QUERIES", 3)),
@@ -113,37 +108,13 @@ RETRIEVAL_CONFIG: Dict[str, Any] = {
 }
 
 SERVER_CONFIG: Dict[str, Any] = {
-    "host": os.getenv("HOST", "0.0.0.0"),
-    "port": int(os.getenv("PORT", 8002)),
-    "reload": os.getenv("RELOAD", "true").lower() == "true",
     "cors_origins": os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(","),
     "enable_fallback_chat": os.getenv("ENABLE_FALLBACK_CHAT", "false").lower() == "true",
     "bm25_rebuild_on_startup": os.getenv("BM25_REBUILD_ON_STARTUP", "true").lower() == "true",
 }
 
 CACHE_CONFIG: Dict[str, Any] = {
-    "l1_ttl_seconds": 60,
-    "l2_ttl_seconds": 3600,
     "redis_url": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
-    "max_lru_size": 1000,
-}
-
-# Harness 韧性工程配置
-RESILIENCE_CONFIG: Dict[str, Any] = {
-    "circuit_breaker": {
-        "enabled": os.getenv("CB_ENABLED", "true").lower() == "true",
-        "failure_threshold": int(os.getenv("CB_FAILURE_THRESHOLD", "5")),
-        "recovery_timeout": float(os.getenv("CB_RECOVERY_TIMEOUT", "30")),
-    },
-    "retry": {
-        "enabled": os.getenv("RETRY_ENABLED", "true").lower() == "true",
-        "max_retries": int(os.getenv("RETRY_MAX_RETRIES", "3")),
-        "base_delay": float(os.getenv("RETRY_BASE_DELAY", "0.5")),
-        "max_delay": float(os.getenv("RETRY_MAX_DELAY", "30")),
-    },
-    "graceful_degradation": {
-        "enabled": os.getenv("GRACEFUL_DEGRADATION_ENABLED", "true").lower() == "true",
-    },
 }
 
 TOKENIZER_CONFIG: Dict[str, Any] = {

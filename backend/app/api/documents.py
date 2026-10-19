@@ -38,6 +38,15 @@ _graph_lock = asyncio.Lock()
 UPLOAD_DIR = DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def _remove_upload(path: Path) -> None:
+    """清理上传文件；失败只记日志，不影响主流程。"""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as remove_error:
+        logger.warning("Failed to remove upload file %s: %s", path, remove_error)
+
+
 chunking_pipeline = ChunkingPipeline()
 
 
@@ -50,6 +59,9 @@ async def _index_document_task(chunks_data: list[dict], parsed_content: str, doc
     3. 落盘操作跟随对应索引的写锁，保证一致性；不同索引的保存互不阻塞。
     """
     bm25 = get_bm25_searcher()
+
+    # 0. 幂等：任务重试时先清掉同一文档的旧索引，避免重复写入
+    await vector_store.delete_document(doc_id)
 
     # 1. 重建 DocumentChunk 并生成 sparse embedding（只读访问 bm25，可放锁外）
     chunks: list[DocumentChunk] = []
@@ -66,8 +78,9 @@ async def _index_document_task(chunks_data: list[dict], parsed_content: str, doc
     # 2. 写入向量库（队列已串行化任务，ChromaDB 写操作独立进行）
     await vector_store.add_chunks(chunks)
 
-    # 3. 加 BM25 锁写入并落盘
+    # 3. 加 BM25 锁写入并落盘（先删后写，保证重试幂等）
     async with _bm25_lock:
+        bm25.delete_document(doc_id)
         for chunk in chunks:
             bm25.add_document({
                 "chunk_id": chunk.chunk_id,
@@ -81,8 +94,9 @@ async def _index_document_task(chunks_data: list[dict], parsed_content: str, doc
     entities = graph_searcher.extract_entities_from_text(parsed_content)
     chunk_ids = [c.chunk_id for c in chunks]
 
-    # 5. 加图谱锁写入并落盘
+    # 5. 加图谱锁写入并落盘（先删后写）
     async with _graph_lock:
+        graph_searcher.delete_document(doc_id)
         for entity in entities:
             graph_searcher.add_entity(entity["name"], chunk_ids, document_id=doc_id)
         graph_searcher.save_to_disk()
@@ -140,6 +154,7 @@ async def upload_document(
     # 文档解析可能涉及 OCR 等 CPU/IO 密集型操作，放到线程池避免阻塞上传接口
     parsed = await asyncio.to_thread(parse_document, str(file_path), ocr_enabled=ocr_enabled)
     if parsed is None or not parsed.content.strip():
+        _remove_upload(file_path)
         raise HTTPException(status_code=400, detail="Failed to parse document or document is empty")
 
     base_metadata = {
@@ -179,6 +194,7 @@ async def upload_document(
     )
 
     if not chunks:
+        _remove_upload(file_path)
         raise HTTPException(status_code=400, detail="No content chunks extracted")
 
     # 序列化 chunks 为 dict（任务队列中需跨协程传递）
@@ -192,13 +208,19 @@ async def upload_document(
         for c in chunks
     ]
 
-    task_id = await task_queue.submit(
-        f"index:{file.filename or 'unknown'}",
-        _index_document_task,
-        chunks_data,
-        parsed.content,
-        doc_id,
-    )
+    try:
+        task_id = await task_queue.submit(
+            f"index:{file.filename or 'unknown'}",
+            _index_document_task,
+            chunks_data,
+            parsed.content,
+            doc_id,
+            user_id=user_context.user_id,
+        )
+    except Exception:
+        # 入队失败时不留孤儿文件
+        _remove_upload(file_path)
+        raise
 
     logger.info(
         "Document upload queued: %s, %s chunks, task=%s, strategy=%s",
@@ -228,7 +250,7 @@ async def upload_document(
     return DocumentUploadResponse(
         document_id=doc_id,
         filename=file.filename or "unknown",
-        status="success",
+        status="queued",
         chunks_count=len(chunks),
         message=f"Queued {len(chunks)} chunks ({strategy.value} strategy). Task: {task_id}",
         task_id=task_id,
@@ -345,6 +367,11 @@ async def delete_document(document_id: str, request: Request):
     graph_searcher.delete_document(document_id)
     graph_searcher.save_to_disk()
 
+    # 同步删除上传原件，避免磁盘只增不减
+    original_extension = os.path.splitext(str(doc_metadata.get("filename") or ""))[1].lower()
+    if original_extension:
+        _remove_upload(UPLOAD_DIR / f"{document_id}{original_extension}")
+
     # 语料已变更，清空检索/查询缓存
     clear_retrieval_cache()
     clear_query_caches()
@@ -372,16 +399,27 @@ async def get_stats():
 
 
 @router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str):
-    """查询索引任务状态。"""
+async def get_task_status(task_id: str, request: Request):
+    """查询索引任务状态；非管理员只能查看自己的任务。"""
+    user_context = extract_user_context(request)
     task = await task_queue.get_task(task_id)
     if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    task_owner = str(task.get("user_id") or "")
+    if task_owner and task_owner != user_context.user_id and not user_context.is_admin:
+        # 不暴露任务是否存在
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
 
 @router.get("/tasks")
-async def list_tasks(status: Optional[str] = None, limit: int = 50):
-    """列出索引任务。"""
-    tasks = await task_queue.list_tasks(status=status, limit=limit)
+async def list_tasks(request: Request, status: Optional[str] = None, limit: int = 50):
+    """列出索引任务；非管理员只看得到自己提交的任务。"""
+    user_context = extract_user_context(request)
+    tasks = await task_queue.list_tasks(
+        status=status,
+        limit=limit,
+        user_id=user_context.user_id,
+        is_admin=user_context.is_admin,
+    )
     return {"tasks": tasks, "count": len(tasks)}

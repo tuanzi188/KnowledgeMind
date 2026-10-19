@@ -1,4 +1,6 @@
 import os
+import json
+import time
 import asyncio
 import shutil
 import logging
@@ -12,6 +14,19 @@ from app.services.embedding import get_embedding, init_embedding
 logger = logging.getLogger(__name__)
 
 _EMBEDDING_DIM = VECTOR_STORE_CONFIG.get("embedding_dimension", 512)
+
+
+def _serialize_metadata_value(value):
+    """Chroma 只接受 str/int/float/bool；列表与字典必须序列化为 JSON 字符串。
+
+    之前直接 str(value) 会把 ["alice", "bob"] 写成 "['alice', 'bob']"，
+    ACL 读取时按逗号切分永远匹配不上 user_id（文档共享授权因此失效）。
+    """
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
 
 @lru_cache(maxsize=1024)
@@ -89,7 +104,7 @@ class VectorStore:
             chunk_documents = [chunk_item.content for chunk_item in chunks]
             chunk_metadatas = [
                 {
-                    key: str(value) if not isinstance(value, (str, int, float, bool)) else value
+                    key: _serialize_metadata_value(value)
                     for key, value in chunk_item.metadata.items()
                 }
                 for chunk_item in chunks
@@ -105,12 +120,11 @@ class VectorStore:
                 )
             except Exception as add_chunk_error:
                 logger.error("Failed to add chunks to ChromaDB: %s", add_chunk_error)
-                for chunk_item in chunks:
-                    self._memory_store.append({
-                        "id": chunk_item.chunk_id,
-                        "content": chunk_item.content,
-                        "metadata": chunk_item.metadata,
-                    })
+                # 不能静默降级到 _memory_store：Chroma 已初始化时该列表不会被检索，
+                # 会造成「上传成功但永远搜不到」。抛出让任务队列重试。
+                raise RuntimeError(
+                    f"向量库写入失败（{len(chunks)} 个 chunk 未入库）: {add_chunk_error}"
+                ) from add_chunk_error
         else:
             for chunk_item in chunks:
                 self._memory_store.append({
@@ -179,6 +193,33 @@ class VectorStore:
                 for memory_item in self._memory_store
                 if memory_item["metadata"].get("document_id") != document_id
             ]
+
+    async def get_chunk(self, chunk_id: str) -> Optional[dict]:
+        """按 chunk_id 取单条记录（MCP 回查原文使用）。"""
+        if not chunk_id:
+            return None
+        if self._collection is not None:
+            collection_result = self._collection.get(
+                ids=[chunk_id], include=["documents", "metadatas"]
+            )
+            ids = collection_result.get("ids") or []
+            if not ids:
+                return None
+            documents = collection_result.get("documents") or []
+            metadatas = collection_result.get("metadatas") or []
+            return {
+                "chunk_id": ids[0],
+                "content": documents[0] if documents else "",
+                "metadata": metadatas[0] if metadatas else {},
+            }
+        for memory_item in self._memory_store:
+            if memory_item["id"] == chunk_id:
+                return {
+                    "chunk_id": chunk_id,
+                    "content": memory_item["content"],
+                    "metadata": memory_item["metadata"],
+                }
+        return None
 
     async def count(self) -> int:
         if self._collection is not None:
@@ -273,27 +314,32 @@ def _safely_migrate_embedding_store(persist_dir: str):
         return
 
     if os.path.isdir(persist_dir):
+        # 迁移前先备份：此前是直接删除，模型加载方式抖动一次就丢全部向量。
+        backup_dir = os.path.join(
+            persist_dir, f"migration_backup_{time.strftime('%Y%m%d_%H%M%S')}"
+        )
+        moved_entries = 0
         for directory_name in os.listdir(persist_dir):
             if directory_name.startswith("migration_backup_"):
                 continue
-            current_path = os.path.join(persist_dir, directory_name)
-            if os.path.basename(current_path) == ".embedding_version":
+            if directory_name == ".embedding_version":
                 continue
-            if os.path.isdir(current_path):
-                shutil.rmtree(current_path, ignore_errors=True)
-            elif os.path.isfile(current_path):
-                try:
-                    os.remove(current_path)
-                except OSError:
-                    logger.warning("Failed to remove stale vector store file: %s", current_path)
+            os.makedirs(backup_dir, exist_ok=True)
+            shutil.move(
+                os.path.join(persist_dir, directory_name),
+                os.path.join(backup_dir, directory_name),
+            )
+            moved_entries += 1
+        logger.warning(
+            "Embedding backend changed from %s to %s; moved %d entries to backup %s",
+            existing_version_tag,
+            current_version_tag,
+            moved_entries,
+            backup_dir,
+        )
     else:
         os.makedirs(persist_dir, exist_ok=True)
 
-    logger.info(
-        "Embedding backend changed from %s to %s. Cleared persisted vector store for full reindex.",
-        existing_version_tag,
-        current_version_tag,
-    )
     with open(version_file_path, "w", encoding="utf-8") as version_output_file:
         version_output_file.write(current_version_tag)
 

@@ -80,7 +80,9 @@ async def main():
     result = {}
     try:
         for mode in ("dense", "bm25", "hybrid", "hybrid_rw"):
-            full_k = args.cand if mode == "hybrid_rw" else args.top_k
+            # 所有召回方式使用同一候选池：此前 hybrid_rw 单独用 25 候选，
+            # 把「改写」与「候选池大小」两个变量混在了一起（见 RESULTS.md 复核说明）。
+            full_k = args.cand
             rows = []
             for qa in QA_PAIRS:
                 hits = await retrieve(mode, qa["query"], full_k)

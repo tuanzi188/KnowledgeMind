@@ -106,6 +106,10 @@ def test_application_boots_and_core_subsystems_are_healthy():
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
         "PYTHONUNBUFFERED": "1",
+        # 冒烟测试固定匿名开发模式，避免开发者本机 .env 的鉴权配置影响断言
+        "APP_ENV": "development",
+        "API_KEY": "",
+        "AUTH_USERS_JSON": "",
     })
 
     log_fd, log_path = tempfile.mkstemp(prefix="km_boot_smoke_", suffix=".log")

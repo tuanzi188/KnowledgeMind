@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Optional, List, AsyncIterator
 
 from openai import AsyncOpenAI, APIStatusError, RateLimitError, APITimeoutError, APIConnectionError
@@ -266,7 +267,7 @@ class OpenAICompatibleClient:
         result_holder: Optional[dict] = None,
     ) -> AsyncIterator[str]:
         from app.services.prompts import SYSTEM_PROMPT
-        system_prompt = SYSTEM_PROMPT.format(current_date="")
+        system_prompt = SYSTEM_PROMPT.format(current_date=datetime.now().strftime("%Y-%m-%d"))
         user_prompt = f"参考资料：\n{context}\n\n问题：{query}"
         messages = [
             {"role": "system", "content": system_prompt},
@@ -302,7 +303,7 @@ class OpenAICompatibleClient:
         self, query: str, context: str, reasoning_mode: str = "pro"
     ) -> tuple[str, Optional[str], dict]:
         from app.services.prompts import SYSTEM_PROMPT
-        system_prompt = SYSTEM_PROMPT.format(current_date="")
+        system_prompt = SYSTEM_PROMPT.format(current_date=datetime.now().strftime("%Y-%m-%d"))
         user_prompt = f"参考资料：\n{context}\n\n问题：{query}"
         messages = [
             {"role": "system", "content": system_prompt},

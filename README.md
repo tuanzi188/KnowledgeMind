@@ -24,15 +24,15 @@ KnowledgeMind 当前定位为可扩展的 RAG 智能知识库应用原型，主�
 
 | 特性 | 说明 |
 |------|------|
-| **多格式文档解析** | 支持 12 种格式：PDF / Word / Excel / PPT / Markdown / TXT / CSV；含 5 类图片 OCR / Vision（PNG / JPG / JPEG / BMP / GIF），扫描件 PDF 自动走 OCR |
-| **多路混合检索** | 向量检索（ChromaDB）+ 关键词检索（BM25）+ 知识图谱检索 |
-| **智能重排序** | 三级 Rerank 策略（L1/L2/L3），根据查询复杂度自适应调整 |
+| **多格式文档解析** | 支持 12 种格式：PDF / Word / Excel / PPT / Markdown / TXT / CSV，以及 PNG / JPG / JPEG / BMP / GIF 五类图片。图片默认只登记元数据；扫描件 OCR 为可选能力，需安装 `requirements-optional.txt` 并显式开启 |
+| **多路混合检索** | 向量检索（ChromaDB）+ 关键词检索（BM25），RRF 融合 |
+| **智能重排序** | 默认 Cross-Encoder 精排（l2）；仅「综合分析 / 对比分析」两类查询走 LLM 重排（l3）；l1 规则重排只作为 Cross-Encoder 不可用时的兜底 |
 | **流式对话** | SSE 流式输出，打字机效果，用户体验流畅 |
-| **多轮会话记忆** | 基于 Redis 的会话持久化，支持上下文连续对话 |
+| **多轮会话记忆** | 会话持久化（Redis 可选，默认 JSON 落盘），支持上下文连续对话 |
 | **多模型支持** | DeepSeek / 阿里云百炼 / Ollama 本地模型，一键切换 |
 | **置信度评估** | 自动评估回答可信度，透明展示知识来源 |
 | **引用追溯** | 每条回答精确标注引用片段，支持原文查看 |
-| **Docker Compose 开发部署** | 提供前端、后端和 Redis 的容器化启动配置，方便本地开发、环境复现和功能验证 |
+| **Docker Compose 开发部署** | 提供前端、后端和 Redis 的容器化启动配置；该链路未在本机验证，使用前请先跑通一次上传 |
 
 ---
 
@@ -51,7 +51,6 @@ graph TB
         E[ChromaDB 向量库]
         F[Redis 会话缓存]
         G[BM25 关键词检索]
-        H[知识图谱检索]
     end
 
     subgraph AI 模型
@@ -71,7 +70,6 @@ graph TB
     D --> E
     D --> F
     D --> G
-    D --> H
     D --> I
     D --> J
     D --> K
@@ -98,7 +96,7 @@ sequenceDiagram
     U->>F: 输入问题
     F->>B: POST /chat/stream
     B->>R: 意图识别 + 查询改写
-    R->>V: 多路检索 (向量+BM25+图谱)
+    R->>V: 多路检索 (向量+BM25)
     V-->>R: 候选文档
     R->>R: Rerank 重排序
     R->>L: 组装 Prompt + 上下文
@@ -119,7 +117,7 @@ sequenceDiagram
 | **构建工具** | Vite 5 | 极快的 HMR 和构建速度 |
 | **后端框架** | FastAPI | 高性能异步、自动 API 文档、Pydantic 校验 |
 | **向量数据库** | ChromaDB | 轻量嵌入、零配置、适合中小规模 |
-| **缓存** | Redis 7 | 会话持久化、L2 缓存 |
+| **缓存** | Redis 7 | 会话持久化 |
 | **LLM 提供商** | DeepSeek API | 高性价比、中文能力强 |
 | **嵌入模型** | BGE-small-zh-v1.5 | 中文语义匹配 SOTA |
 | **容器化** | Docker + docker-compose | 方便本地开发、环境复现和功能验证 |
@@ -149,7 +147,7 @@ cp backend/.env.example backend/.env
 # 编辑 backend/.env，填入 DS_API_KEY
 ```
 
-### 3. Docker Compose 开发部署（推荐）
+### 3. Docker Compose 开发部署（可选）
 
 提供前端、后端和 Redis 的容器化启动配置，方便本地开发、环境复现和功能验证。
 
@@ -166,7 +164,7 @@ docker compose up -d --build
 ```bash
 cd backend
 pip install -r requirements.txt
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8002 --reload
 ```
 
 **前端：**
@@ -246,6 +244,22 @@ KnowledgeMind/
 
 ---
 
+## MCP 接口
+
+检索能力同时以 MCP（Model Context Protocol）server 的形式对外提供，任何 MCP 兼容客户端（Cursor / Claude Desktop / LangGraph 等）都能接入：
+
+```bash
+cd backend
+python -m app.mcp.server                                   # stdio（本机客户端）
+python -m app.mcp.server --transport http --port 8931      # streamable-http
+python -m app.mcp.demo_client                              # 客户端示例：握手 → 工具清单 → 检索 → 回查
+```
+
+工具：`search_kb(query, top_k)`（混合召回 + CE 重排）、`get_citation(chunk_id)`（按段落回查原文）。
+默认读取真实向量库；设置 `MCP_DEMO=1` 时改用评测语料，便于零依赖演示。
+
+> MCP 协议本身没有内建鉴权：stdio 模式靠进程隔离，http 模式默认只绑定 `127.0.0.1`；如需跨机使用，必须放在带 token 校验的网关之后。
+
 ## License
 
 MIT
@@ -253,6 +267,7 @@ MIT
 ## 身份与权限
 
 - 单用户开发模式：未配置认证时使用固定的 `anonymous` 身份，不读取客户端自报的用户、部门或角色。仅适合本机开发。
+- 生产/预发模式：设置 `APP_ENV=production`（或 `staging`）后，若既未配置 `API_KEY` 也未配置 `AUTH_USERS_JSON`，服务会拒绝启动；`/api/v1/health/deep` 也要求认证。
 - 单用户访问控制：后端设置 `API_KEY`，在网页右上角账号面板输入该令牌。不要使用 `VITE_API_KEY` 将共享密钥编译进前端。
 - 多用户模式：在 `backend/.env` 配置 `AUTH_USERS_JSON`，为每人提供独立随机令牌、用户 ID、角色与部门。配置示例见 `backend/.env.example`。启用后共享 `API_KEY` 不再有效。
 - 用户 ID 应保持稳定；同一用户 ID 可配置多个令牌用于轮换。角色仅由服务端授予，只有管理员可查看全局分析与审计。
@@ -265,7 +280,7 @@ MIT
 - 本地默认写入仓库根目录 `data/`；Docker 使用 `DATA_DIR=/app/data`，与宿主机 `./data` 挂载一致，会话文件也使用这个目录。
 - 旧版本曾将部分数据写到仓库父目录。升级前停止服务，备份旧目录，并手动迁移到新的 `data/`；不要直接覆盖已有数据。也可临时将 `DATA_DIR` 指向旧目录。
 - Redis 仅在容器网络内使用，不再向宿主机公开 6379 端口。
-- `frontend/index.html` 现在加载 React 入口，旧单文件界面保存在 `frontend/legacy-preview.html`，不参与生产构建。
+- `frontend/index.html` 加载 React 入口，构建产物在 `frontend/dist/`。
 - 无外部模型凭据时可以运行单元测试；实际文档问答仍需可用的模型 API 或本地 Ollama。
 
 ## 开发验证
@@ -281,4 +296,4 @@ npm test
 npm run build
 ```
 
-CI 同时运行后端测试、前端测试和生产构建。权限回归覆盖伪造角色、跨用户读取与删除、流式会话隔离和非法会话编号。
+CI 同时运行后端测试、前端测试与生产构建。权限回归覆盖伪造角色、会话维度的跨用户读取与删除、流式会话隔离和非法会话编号；文档级 ACL 另有独立端到端测试（上传时共享给他人 → 被授权用户可见、未授权用户不可见）。

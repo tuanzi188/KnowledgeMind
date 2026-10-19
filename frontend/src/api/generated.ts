@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Authenticated Profile */
+        get: operations["authenticated_profile_api_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat": {
         parameters: {
             query?: never;
@@ -72,23 +89,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Health Check */
-        get: operations["health_check_api_v1_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/conversations": {
         parameters: {
             query?: never;
@@ -141,6 +141,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Documents
+         * @description 列出当前用户有权限访问的文档（按 document_id 聚合）。
+         */
+        get: operations["list_documents_api_v1_documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}": {
         parameters: {
             query?: never;
@@ -151,7 +171,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Document */
+        /**
+         * Delete Document
+         * @description 删除文档，仅管理员或 owner 可执行。
+         */
         delete: operations["delete_document_api_v1_documents__document_id__delete"];
         options?: never;
         head?: never;
@@ -167,6 +190,200 @@ export interface paths {
         };
         /** Get Stats */
         get: operations["get_stats_api_v1_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Task Status
+         * @description 查询索引任务状态；非管理员只能查看自己的任务。
+         */
+        get: operations["get_task_status_api_v1_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tasks
+         * @description 列出索引任务；非管理员只看得到自己提交的任务。
+         */
+        get: operations["list_tasks_api_v1_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Analytics Overview
+         * @description 系统运行总览数据分析。
+         */
+        get: operations["get_analytics_overview_api_v1_analytics_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze Documents
+         * @description 文档与 chunks 数据分析。
+         */
+        post: operations["analyze_documents_api_v1_analytics_documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze Conversations
+         * @description 对话数据分析。
+         */
+        post: operations["analyze_conversations_api_v1_analytics_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze Tasks
+         * @description 任务队列数据分析。
+         */
+        post: operations["analyze_tasks_api_v1_analytics_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze Graph
+         * @description 知识图谱数据分析。
+         */
+        post: operations["analyze_graph_api_v1_analytics_graph_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Audit Logs
+         * @description 审计日志查询（建议仅管理员使用）。
+         */
+        post: operations["query_audit_logs_api_v1_analytics_audit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve Index */
+        get: operations["serve_index_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve Index */
+        get: operations["serve_index_analytics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -192,10 +409,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health Check
+         * @description 基础健康检查
+         */
+        get: operations["health_check_api_v1_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health/deep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Deep Health Check
+         * @description 深度健康检查（Harness 韧性工程）
+         *     检查所有依赖组件的可用性，包括熔断器状态
+         */
+        get: operations["deep_health_check_api_v1_health_deep_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalyticsResponse */
+        AnalyticsResponse: {
+            /** Metric */
+            metric: string;
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+            /**
+             * Series
+             * @default []
+             */
+            series: {
+                [key: string]: unknown;
+            }[];
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+            /** Generated At */
+            generated_at?: string;
+        };
+        /** AnalyticsTimeRange */
+        AnalyticsTimeRange: {
+            /**
+             * Start
+             * @description 开始时间 ISO 格式
+             */
+            start?: string | null;
+            /**
+             * End
+             * @description 结束时间 ISO 格式
+             */
+            end?: string | null;
+        };
+        /** AuditLogQueryRequest */
+        AuditLogQueryRequest: {
+            /** User Id */
+            user_id?: string | null;
+            /** Action */
+            action?: string | null;
+            /** Resource Type */
+            resource_type?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Start Time */
+            start_time?: string | null;
+            /** End Time */
+            end_time?: string | null;
+            /**
+             * Limit
+             * @default 100
+             */
+            limit: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+        };
+        /** AuditLogQueryResponse */
+        AuditLogQueryResponse: {
+            /** Total */
+            total: number;
+            /** Logs */
+            logs: {
+                [key: string]: unknown;
+            }[];
+        };
         /** Body_upload_document_api_v1_upload_post */
         Body_upload_document_api_v1_upload_post: {
             /** File */
@@ -212,6 +541,27 @@ export interface components {
              * @default false
              */
             ocr_enabled: boolean;
+            /**
+             * Allowed Users
+             * @description 逗号分隔的允许访问用户 ID
+             */
+            allowed_users?: string | null;
+            /**
+             * Allowed Departments
+             * @description 逗号分隔的允许访问部门
+             */
+            allowed_departments?: string | null;
+            /**
+             * Allowed Roles
+             * @description 逗号分隔的允许访问角色
+             */
+            allowed_roles?: string | null;
+            /**
+             * Is Public
+             * @description 是否公开访问
+             * @default false
+             */
+            is_public: boolean;
         };
         /** ChatRequest */
         ChatRequest: {
@@ -304,6 +654,16 @@ export interface components {
             /** Score */
             score: number;
         };
+        /** ConversationAnalyticsRequest */
+        ConversationAnalyticsRequest: {
+            time_range?: components["schemas"]["AnalyticsTimeRange"] | null;
+            /**
+             * Group By
+             * @description 分组维度: day, week, month
+             * @default day
+             */
+            group_by: string | null;
+        };
         /** ConversationDeleteResponse */
         ConversationDeleteResponse: {
             /** Success */
@@ -347,6 +707,16 @@ export interface components {
             /** Timestamp */
             timestamp: number;
         };
+        /** DocumentAnalyticsRequest */
+        DocumentAnalyticsRequest: {
+            time_range?: components["schemas"]["AnalyticsTimeRange"] | null;
+            /**
+             * Group By
+             * @description 分组维度: file_type, department, classification
+             * @default file_type
+             */
+            group_by: string | null;
+        };
         /** DocumentUploadResponse */
         DocumentUploadResponse: {
             /** Document Id */
@@ -365,6 +735,24 @@ export interface components {
              * @default
              */
             message: string;
+            /** Task Id */
+            task_id?: string | null;
+            /** Owner */
+            owner?: string | null;
+            /**
+             * Is Public
+             * @default false
+             */
+            is_public: boolean | null;
+        };
+        /** GraphAnalyticsRequest */
+        GraphAnalyticsRequest: {
+            /**
+             * Top K
+             * @description Top-K 高频实体
+             * @default 20
+             */
+            top_k: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -389,6 +777,12 @@ export interface components {
             filters?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Query Type
+             * @description 检索权重类型，如 概念解释、精确查找、综合分析
+             * @default 综合分析
+             */
+            query_type: string | null;
         };
         /** SearchResponse */
         SearchResponse: {
@@ -412,6 +806,16 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** TaskAnalyticsRequest */
+        TaskAnalyticsRequest: {
+            time_range?: components["schemas"]["AnalyticsTimeRange"] | null;
+            /**
+             * Group By
+             * @description 分组维度: status, name
+             * @default status
+             */
+            group_by: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -434,6 +838,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    authenticated_profile_api_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     chat_api_v1_chat_post: {
         parameters: {
             query?: never;
@@ -564,26 +988,6 @@ export interface operations {
             };
         };
     };
-    health_check_api_v1_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     list_conversations_api_v1_conversations_get: {
         parameters: {
             query?: never;
@@ -699,6 +1103,26 @@ export interface operations {
             };
         };
     };
+    list_documents_api_v1_documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     delete_document_api_v1_documents__document_id__delete: {
         parameters: {
             query?: never;
@@ -750,7 +1174,335 @@ export interface operations {
             };
         };
     };
+    get_task_status_api_v1_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tasks_api_v1_tasks_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_analytics_overview_api_v1_analytics_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+        };
+    };
+    analyze_documents_api_v1_analytics_documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentAnalyticsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_conversations_api_v1_analytics_conversations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationAnalyticsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_tasks_api_v1_analytics_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskAnalyticsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_graph_api_v1_analytics_graph_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphAnalyticsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_audit_logs_api_v1_analytics_audit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuditLogQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogQueryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_index_audit_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    serve_index_analytics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     serve_index__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    health_check_api_v1_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    deep_health_check_api_v1_health_deep_get: {
         parameters: {
             query?: never;
             header?: never;

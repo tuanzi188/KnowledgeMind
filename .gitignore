@@ -84,6 +84,8 @@ coverage/
 # Evaluation artifacts
 # ===========================
 eval_report.json
+eval_abstention.json
+eval_abstention.csv
 *.pkl
 token.json
 .preview/

@@ -1,6 +1,6 @@
 """实验 3：重排档位矩阵（效果 × 成本 × 延迟）
 
-固定召回（三路融合 + 查询改写，候选 25），比较四档重排：
+固定召回（融合，候选 25），比较四档重排：
   none  不重排（只按融合分排序）
   l1    规则启发式（关键词重合）
   l2    Cross-Encoder（bge-reranker-base，本地 CPU）
@@ -126,7 +126,7 @@ async def main():
         deepseek_client.simple_query = _orig_simple
 
     payload = {"corpus_chunks": len(CORPUS), "queries": len(QA_PAIRS), "top_k": args.top_k,
-               "candidate_k": args.cand, "retrieval": "hybrid + rewrite", "results": result}
+               "candidate_k": args.cand, "retrieval": f"hybrid (candidates={args.cand})", "results": result}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n写入 {args.out}")

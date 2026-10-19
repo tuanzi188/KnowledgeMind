@@ -115,15 +115,15 @@ const AuditLogs: React.FC = () => {
     },
     {
       title: '用户',
-      dataIndex: 'user_context',
+      dataIndex: 'user_id',
       key: 'user_id',
       width: 140,
-      render: (ctx: Record<string, unknown>) => (
+      render: (value: unknown, record: Record<string, unknown>) => (
         <div>
-          <Text strong>{String(ctx?.user_id || '-')}</Text>
-          {Boolean(ctx?.department) && (
+          <Text strong>{String(value || '-')}</Text>
+          {Boolean(record.department) && (
             <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-              {String(ctx.department)}
+              {String(record.department)}
             </div>
           )}
         </div>
@@ -169,13 +169,13 @@ const AuditLogs: React.FC = () => {
   ]
 
   const expandedRowRender = (record: Record<string, unknown>) => {
-    const ctx = (record.user_context as Record<string, unknown>) || {}
+    const roles = record.roles
     return (
       <Descriptions bordered size="small" column={2}>
-        <Descriptions.Item label="IP 地址">{String(ctx.ip_address || '-')}</Descriptions.Item>
-        <Descriptions.Item label="User Agent">{String(ctx.user_agent || '-')}</Descriptions.Item>
-        <Descriptions.Item label="角色">{Array.isArray(ctx.roles) ? ctx.roles.join(', ') : '-'}</Descriptions.Item>
-        <Descriptions.Item label="部门">{String(ctx.department || '-')}</Descriptions.Item>
+        <Descriptions.Item label="IP 地址">{String(record.ip_address || '-')}</Descriptions.Item>
+        <Descriptions.Item label="User Agent">{String(record.user_agent || '-')}</Descriptions.Item>
+        <Descriptions.Item label="角色">{Array.isArray(roles) ? roles.join(', ') : '-'}</Descriptions.Item>
+        <Descriptions.Item label="部门">{String(record.department || '-')}</Descriptions.Item>
         {Boolean(record.error_message) && (
           <Descriptions.Item label="错误信息" span={2}>
             <Text type="danger">{String(record.error_message)}</Text>

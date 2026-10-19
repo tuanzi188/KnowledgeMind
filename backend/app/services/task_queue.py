@@ -26,12 +26,13 @@ class TaskStatus(str, Enum):
 class Task:
     __slots__ = (
         "task_id", "name", "status", "created_at", "started_at",
-        "finished_at", "result", "error", "retry_count",
+        "finished_at", "result", "error", "retry_count", "user_id",
     )
 
-    def __init__(self, task_id: str, name: str):
+    def __init__(self, task_id: str, name: str, user_id: str = ""):
         self.task_id = task_id
         self.name = name
+        self.user_id = user_id
         self.status = TaskStatus.PENDING
         self.created_at = time.time()
         self.started_at: float | None = None
@@ -44,21 +45,24 @@ class Task:
         return {
             "task_id": self.task_id,
             "name": self.name,
+            "user_id": self.user_id,
             "status": self.status.value,
             "created_at": self.created_at,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
+            "result": self.result,
             "error": self.error,
             "retry_count": self.retry_count,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Task":
-        task = cls(task_id=data["task_id"], name=data["name"])
+        task = cls(task_id=data["task_id"], name=data["name"], user_id=data.get("user_id", ""))
         task.status = TaskStatus(data.get("status", "pending"))
         task.created_at = data.get("created_at", time.time())
         task.started_at = data.get("started_at")
         task.finished_at = data.get("finished_at")
+        task.result = data.get("result")
         task.error = data.get("error")
         task.retry_count = data.get("retry_count", 0)
         return task
@@ -129,11 +133,12 @@ class TaskQueue:
         name: str,
         func: Callable[..., Awaitable[Any]],
         *args,
+        user_id: str = "",
         **kwargs,
     ) -> str:
         """提交任务到队列，返回 task_id。"""
         task_id = str(uuid.uuid4())
-        task = Task(task_id=task_id, name=name)
+        task = Task(task_id=task_id, name=name, user_id=user_id)
         self._tasks[task_id] = task
 
         await self._persist_task_status(task)
@@ -161,12 +166,20 @@ class TaskQueue:
                 logger.debug("Failed to restore task %s from Redis: %s", task_id, e)
         return None
 
-    async def list_tasks(self, status: Optional[str] = None, limit: int = 50) -> list[dict]:
-        """列出任务。"""
+    async def list_tasks(
+        self,
+        status: Optional[str] = None,
+        limit: int = 50,
+        user_id: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> list[dict]:
+        """列出任务；非管理员只返回自己的任务。"""
         await self.cleanup_old_tasks()
         result = []
         for task in reversed(list(self._tasks.values())):
             if status and task.status.value != status:
+                continue
+            if user_id and not is_admin and task.user_id != user_id:
                 continue
             result.append(task.to_dict())
             if len(result) >= limit:

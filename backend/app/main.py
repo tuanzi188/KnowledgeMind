@@ -16,11 +16,11 @@ from app.core.logging_context import (
     generate_trace_id,
 )
 
-from app.config import SERVER_CONFIG, MODEL_MODE, MODEL_PROVIDER
+from app.config import SERVER_CONFIG, MODEL_MODE, MODEL_PROVIDER, API_KEY
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
 from app.api.analytics import router as analytics_router
-from app.core.auth import verify_api_key
+from app.core.auth import verify_api_key, API_IDENTITIES
 from app.services.vector_store import vector_store
 from app.services.reranker import reranker
 from app.services.keyword_search import get_bm25_searcher
@@ -80,7 +80,11 @@ async def _restore_vector_store_from_bm25_index(bm25_searcher_instance):
     if not restored_chunks:
         return
 
-    await vector_store.add_chunks(restored_chunks)
+    try:
+        await vector_store.add_chunks(restored_chunks)
+    except Exception as restore_error:
+        logger.error("Failed to restore vector store from BM25 documents: %s", restore_error)
+        return
     logger.info(
         "Vector store restored from BM25 persisted documents: chunks=%s",
         len(restored_chunks),
@@ -192,9 +196,23 @@ async def _rebuild_retrieval_indexes():
     )
 
 
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+_PRODUCTION_ENVS = {"production", "prod", "staging"}
+
+
+def _assert_production_security() -> None:
+    """生产/预发环境不允许以匿名模式启动。"""
+    if APP_ENV in _PRODUCTION_ENVS and not API_KEY and not API_IDENTITIES:
+        raise RuntimeError(
+            f"APP_ENV={APP_ENV} 时必须配置 API_KEY 或 AUTH_USERS_JSON；"
+            "匿名模式仅允许在 development/test 环境使用。"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting KnowledgeMind RAG API...")
+    _assert_production_security()
+    logger.info("Starting KnowledgeMind RAG API... (env=%s)", APP_ENV)
     await vector_store.initialize()
     logger.info("Vector store initialized")
     await conversation_memory._init_store()
@@ -279,7 +297,7 @@ async def health_check():
     return {"status": "ok", "service": "KnowledgeMind RAG API"}
 
 
-@app.get("/api/v1/health/deep")
+@app.get("/api/v1/health/deep", dependencies=[Depends(verify_api_key)])
 async def deep_health_check():
     """
     深度健康检查（Harness 韧性工程）

@@ -8,19 +8,22 @@ LangGraph 等）都能接入。
     python -m app.mcp.server                          # stdio（本机客户端）
     python -m app.mcp.server --transport http --port 8931   # streamable-http（远程/多客户端）
 
+数据源：
+    默认读取真实向量库（DATA_DIR/chroma_db），复用主链路的混合检索 + CE 重排；
+    设置环境变量 MCP_DEMO=1 时改用 evaluation/sample_data 的内存索引，便于零依赖演示。
+
 工具：
-    search_kb(query, top_k)   三路召回 + Cross-Encoder 重排后返回相关段落
+    search_kb(query, top_k)   混合召回 + Cross-Encoder 重排后返回相关段落
     get_citation(chunk_id)    按 chunk 取原文与出处（答案回查）
 
-已知限制（有意不做，见交付说明）：
-    1. 无鉴权：MCP 无内建鉴权。stdio 模式靠进程隔离；http 模式必须在外层网关加 token，
-       否则等于对公网开放。本项目未做。
-    2. 数据源：当前用评测语料构建内存索引，便于零依赖复现。接入真实数据把
-       `_load_corpus()` 换成 vector_store 读取即可，工具契约不变。
-    3. stdio 仅本机：跨机调用需使用 http 传输。
+已知限制：
+    1. 无鉴权：MCP 无内建鉴权。stdio 模式靠进程隔离；http 模式默认只绑 127.0.0.1，
+       如需跨机访问必须在外层网关加 token。
+    2. 无用户身份：工具调用不携带 ACL 上下文，只应部署在可信环境。
 """
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -33,9 +36,11 @@ if str(_BACKEND_DIR) not in sys.path:
 
 from mcp.server.mcpserver import MCPServer                            # noqa: E402
 
+DEMO_MODE = os.getenv("MCP_DEMO", "0").strip().lower() in {"1", "true", "yes"}
+
 server = MCPServer(
     name="knowledgemind",
-    version="0.2.0",
+    version="0.3.0",
     instructions=(
         "企业知识检索服务。用于查询公司制度、流程、规定类问题。"
         "回答前先调用 search_kb 获取原文，再用 get_citation 回查出处；"
@@ -49,24 +54,33 @@ _CANDIDATE_MULTIPLIER = 5
 _state: dict[str, Any] = {}
 
 
-def _load_corpus() -> list[dict]:
-    """接入真实数据时替换这里（如从 vector_store 读 chunk）。"""
+def _load_demo_corpus() -> list[dict]:
     from evaluation.sample_data import CORPUS
 
     return CORPUS
 
 
-def _ensure_index() -> None:
-    if _state:
+async def _ensure_demo_index() -> None:
+    if _state.get("demo_ready"):
         return
     from app.services.embedding import get_embedding
 
     embedding = get_embedding()
-    corpus = _load_corpus()
+    corpus = _load_demo_corpus()
     vectors = embedding.embed([item["content"] for item in corpus])
     _state["embedding"] = embedding
     _state["vectors"] = np.asarray(vectors, dtype=np.float32)
     _state["by_id"] = {item["chunk_id"]: item for item in corpus}
+    _state["demo_ready"] = True
+
+
+async def _ensure_real_index() -> None:
+    if _state.get("real_ready"):
+        return
+    from app.services.vector_store import vector_store
+
+    await vector_store.initialize()
+    _state["real_ready"] = True
 
 
 @server.tool()
@@ -76,7 +90,7 @@ async def search_kb(query: str, top_k: int = 5) -> list[dict]:
     当用户询问公司制度、流程、规定、政策类问题时使用。
     返回段落 id、所属文档、正文，以及两个分数字段：
       - `score`：Cross-Encoder 重排分（无固定量纲，越高越相关，仅用于相对排序）
-      - `similarity`：向量余弦相似度（0-1）。低于 0.35 通常意味着资料不足，应如实说明。
+      - `similarity`：召回阶段的分数（0-1）。低于 0.35 通常意味着资料不足，应如实说明。
 
     Args:
         query: 用户问题原文，不要改写
@@ -84,27 +98,43 @@ async def search_kb(query: str, top_k: int = 5) -> list[dict]:
     """
     from app.services.reranker import reranker
 
-    _ensure_index()
     top_k = max(1, min(int(top_k or 5), 10))
+    candidate_k = max(top_k * _CANDIDATE_MULTIPLIER, top_k)
 
-    q = np.asarray(_state["embedding"].embed([query])[0], dtype=np.float32)
-    matrix = _state["vectors"]
-    sims = (matrix @ q) / (np.linalg.norm(matrix, axis=1) * np.linalg.norm(q) + 1e-9)
-    order = np.argsort(-sims)[: max(top_k * _CANDIDATE_MULTIPLIER, top_k)]
+    if DEMO_MODE:
+        await _ensure_demo_index()
+        q = np.asarray(_state["embedding"].embed([query])[0], dtype=np.float32)
+        matrix = _state["vectors"]
+        sims = (matrix @ q) / (np.linalg.norm(matrix, axis=1) * np.linalg.norm(q) + 1e-9)
+        order = np.argsort(-sims)[:candidate_k]
+        corpus = _load_demo_corpus()
+        candidates = [
+            {
+                "chunk_id": corpus[i]["chunk_id"],
+                "title": corpus[i].get("title", ""),
+                "document_id": corpus[i].get("doc_id", ""),
+                "content": corpus[i]["content"],
+                "rrf_score": float(sims[i]),
+            }
+            for i in order
+        ]
+    else:
+        # 复用线上检索链路（向量 + BM25 + RRF），避免维护第二套召回逻辑
+        await _ensure_real_index()
+        from app.services.hybrid_search import hybrid_retriever
 
-    corpus = _load_corpus()
-    candidates = [
-        {
-            "chunk_id": corpus[i]["chunk_id"],
-            "title": corpus[i].get("title", ""),
-            "document_id": corpus[i].get("doc_id", ""),
-            "content": corpus[i]["content"],
-            "rrf_score": float(sims[i]),
-        }
-        for i in order
-    ]
+        raw_results = await hybrid_retriever.retrieve(query=query, top_k=candidate_k)
+        candidates = [
+            {
+                "chunk_id": item.get("chunk_id", ""),
+                "title": (item.get("metadata") or {}).get("title", ""),
+                "document_id": (item.get("metadata") or {}).get("document_id", ""),
+                "content": item.get("content", ""),
+                "rrf_score": float(item.get("rrf_score", item.get("score", 0.0))),
+            }
+            for item in raw_results
+        ]
 
-    # 复用主链路的 Cross-Encoder 重排（l2，0 token 本地模型）；失败则由 reranker 内部降级
     try:
         ranked = await reranker.rerank(query, candidates, top_k=top_k, strategy="l2")
     except Exception:
@@ -124,22 +154,38 @@ async def search_kb(query: str, top_k: int = 5) -> list[dict]:
 
 
 @server.tool()
-def get_citation(chunk_id: str) -> dict:
+async def get_citation(chunk_id: str) -> dict:
     """按 chunk_id 取出原文与出处，用于回查答案依据。
 
     Args:
         chunk_id: search_kb 返回的段落 id
     """
-    _ensure_index()
-    item = _state["by_id"].get(chunk_id)
+    if DEMO_MODE:
+        await _ensure_demo_index()
+        item = _state["by_id"].get(chunk_id)
+        if not item:
+            return {"found": False, "chunk_id": chunk_id, "error": "未找到该段落"}
+        return {
+            "found": True,
+            "chunk_id": chunk_id,
+            "title": item.get("title", ""),
+            "document_id": item.get("doc_id", ""),
+            "content": item["content"],
+        }
+
+    await _ensure_real_index()
+    from app.services.vector_store import vector_store
+
+    item = await vector_store.get_chunk(chunk_id)
     if not item:
         return {"found": False, "chunk_id": chunk_id, "error": "未找到该段落"}
+    metadata = item.get("metadata") or {}
     return {
         "found": True,
         "chunk_id": chunk_id,
-        "title": item.get("title", ""),
-        "document_id": item.get("doc_id", ""),
-        "content": item["content"],
+        "title": metadata.get("title", metadata.get("filename", "")),
+        "document_id": metadata.get("document_id", ""),
+        "content": item.get("content", ""),
     }
 
 

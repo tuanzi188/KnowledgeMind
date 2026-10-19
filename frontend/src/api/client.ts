@@ -94,21 +94,6 @@ export interface AclOptions {
   allowedRoles?: string
 }
 
-export async function sendChat(query: string, conversationId?: string): Promise<ChatResponse> {
-  const { data } = await api.post<ChatResponse>('/chat', {
-    query,
-    conversation_id: conversationId,
-    top_k: 5,
-    use_fallback: true,
-  })
-  return data
-}
-
-export async function searchQuery(query: string, topK: number = 10): Promise<SearchResponse> {
-  const { data } = await api.post<SearchResponse>('/search', { query, top_k: topK })
-  return data
-}
-
 export async function uploadDocument(file: File, title?: string, acl?: AclOptions): Promise<UploadResponse> {
   const form = new FormData()
   form.append('file', file)
@@ -118,11 +103,6 @@ export async function uploadDocument(file: File, title?: string, acl?: AclOption
   if (acl?.allowedDepartments) form.append('allowed_departments', acl.allowedDepartments)
   if (acl?.allowedRoles) form.append('allowed_roles', acl.allowedRoles)
   const { data } = await api.post<UploadResponse>('/upload', form)
-  return data
-}
-
-export async function getHealth(): Promise<Record<string, string>> {
-  const { data } = await api.get('/health')
   return data
 }
 

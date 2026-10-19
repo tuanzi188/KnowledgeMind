@@ -44,7 +44,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ open, onClose }) => {
         nextResults.push({
           name: file.name,
           status: 'success',
-          message: `已解析 ${result.chunks_count} 个片段`,
+          message: `已入队 ${result.chunks_count} 个片段（后台索引中）`,
         })
       } catch (err: any) {
         nextResults.push({

@@ -6,7 +6,6 @@ from app.config import RETRIEVAL_CONFIG
 from app.core.cache import TimedLRUCache
 from app.services.vector_store import vector_store
 from app.services.keyword_search import get_bm25_searcher
-from app.services.graph_search import graph_searcher
 from app.services.filter_utils import match_filters
 
 logger = logging.getLogger(__name__)
@@ -22,16 +21,18 @@ def clear_retrieval_cache():
 
 class HybridRetriever:
     def __init__(self):
+        # 图谱检索返回的是无正文/无 ACL 的占位结果，已在主链路摘除；
+        # 原三路权重中的 graph 份额按比例归一到 vector/keyword，保持相对关系不变。
         self.weight_profiles = {
-            "概念解释": {"vector": 0.6, "keyword": 0.3, "graph": 0.1},
-            "精确查找": {"vector": 0.2, "keyword": 0.7, "graph": 0.1},
-            "关系推理": {"vector": 0.2, "keyword": 0.2, "graph": 0.6},
-            "综合分析": {"vector": 0.4, "keyword": 0.3, "graph": 0.3},
-            "对比分析": {"vector": 0.4, "keyword": 0.4, "graph": 0.2},
-            "文档摘要": {"vector": 0.5, "keyword": 0.4, "graph": 0.1},
+            "概念解释": {"vector": 0.667, "keyword": 0.333},
+            "精确查找": {"vector": 0.222, "keyword": 0.778},
+            "关系推理": {"vector": 0.5, "keyword": 0.5},
+            "综合分析": {"vector": 0.571, "keyword": 0.429},
+            "对比分析": {"vector": 0.5, "keyword": 0.5},
+            "文档摘要": {"vector": 0.556, "keyword": 0.444},
         }
         # 纯关键词降级权重（向量检索不可用时）
-        self._keyword_only_weights = {"vector": 0.0, "keyword": 0.9, "graph": 0.1}
+        self._keyword_only_weights = {"vector": 0.0, "keyword": 1.0}
 
     async def retrieve(
         self,
@@ -47,22 +48,21 @@ class HybridRetriever:
         if cached_results is not None:
             return cached_results
 
-        # 三种检索源相互独立，使用 asyncio.gather 并行执行
-        vector_results, keyword_results, graph_results = await asyncio.gather(
+        # 两路检索源相互独立，使用 asyncio.gather 并行执行
+        vector_results, keyword_results = await asyncio.gather(
             self._vector_search_safe(query, top_k * 2, filters),
             asyncio.to_thread(self._keyword_search_safe, query, top_k * 2, filters),
-            self._graph_search_safe(query, top_k, filters),
         )
 
         if vector_results is None:
-            logger.warning("向量检索不可用，降级为纯关键词+图谱检索")
+            logger.warning("向量检索不可用，降级为纯关键词检索")
             weights = self._keyword_only_weights
         else:
             weights = self.weight_profiles.get(query_type, self.weight_profiles["综合分析"])
 
         fused = self.rrf_fuse(
-            [vector_results or [], keyword_results or [], graph_results or []],
-            weights=[weights["vector"], weights["keyword"], weights["graph"]],
+            [vector_results or [], keyword_results or []],
+            weights=[weights["vector"], weights["keyword"]],
             top_k=top_k,
         )
 
@@ -96,16 +96,6 @@ class HybridRetriever:
             return bm25.search(query, top_k=top_k, filters=filters)
         except Exception as e:
             logger.warning("关键词检索失败 (降级处理): %s", e)
-            return None
-
-    async def _graph_search_safe(
-        self, query: str, top_k: int, filters: Optional[dict]
-    ) -> Optional[List[dict]]:
-        """安全的图谱检索：失败时返回 None"""
-        try:
-            return await graph_searcher.search(query, top_k=top_k, filters=filters)
-        except Exception as e:
-            logger.warning("图谱检索失败 (降级处理): %s", e)
             return None
 
     def rrf_fuse(

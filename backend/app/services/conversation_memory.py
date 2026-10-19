@@ -135,9 +135,10 @@ class RedisSessionStore(BaseSessionStore):
             self._redis = None
             return False
 
-    async def load_all(self) -> Dict[str, "ConversationSession"]:
+    async def load_all(self) -> Optional[Dict[str, "ConversationSession"]]:
+        """返回 None 表示 Redis 不可用/读取失败；返回 {} 表示 Redis 可用但没有会话。"""
         if not await self._ensure_redis():
-            return {}
+            return None
         sessions: Dict[str, ConversationSession] = OrderedDict()
         try:
             session_ids = await self._redis.smembers(REDIS_INDEX_KEY)
@@ -167,7 +168,7 @@ class RedisSessionStore(BaseSessionStore):
         except Exception as e:
             logger.warning("Failed to load sessions from Redis: %s", e)
             self._available = False
-            return {}
+            return None
 
         if sessions:
             logger.info("Loaded %d conversation sessions from Redis", len(sessions))
@@ -309,11 +310,11 @@ class ConversationMemory:
             if self._store is None:
                 self._store = _create_session_store(self._persist_dir, self.session_ttl)
             sessions = await self._store.load_all()
-            # Redis 加载失败时自动回退到 JSON 存储
-            if not sessions and isinstance(self._store, RedisSessionStore):
-                logger.info("Redis returned no sessions, falling back to JSON store")
+            # None = Redis 不可用（真回退）；{} = Redis 可用但为空（保持 Redis，避免误切 JSON）
+            if sessions is None:
+                logger.info("Redis session store unavailable, falling back to JSON store")
                 self._store = JsonSessionStore(self._persist_dir, self.session_ttl)
-                sessions = await self._store.load_all()
+                sessions = await self._store.load_all() or {}
             self._sessions.update(sessions)
             if sessions:
                 logger.info("Loaded %d persisted conversation sessions", len(sessions))
@@ -335,6 +336,11 @@ class ConversationMemory:
             self._dirty_sessions -= set(successful_sessions)
             if successful_sessions:
                 logger.debug("Flushed %d dirty conversation sessions", len(successful_sessions))
+            # Redis store 的 save() 只是进 _pending 缓冲，必须显式 flush 才不会在重启后丢数据
+            try:
+                await self._store.flush()
+            except Exception as flush_error:
+                logger.warning("Failed to flush session store buffer: %s", flush_error)
 
     async def _cleanup_expired(self):
         async with self._lock:

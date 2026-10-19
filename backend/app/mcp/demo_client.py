@@ -16,6 +16,7 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -38,6 +39,8 @@ async def main() -> None:
             command=sys.executable,
             args=["-m", "app.mcp.server"],
             cwd=str(_BACKEND_DIR),
+            # 演示用评测语料，不依赖本地向量库
+            env={**os.environ, "MCP_DEMO": "1"},
         )
 
     async with Client(target) as client:
