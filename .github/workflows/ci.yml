@@ -49,3 +49,36 @@ jobs:
         run: |
           npx tsc --noEmit
           npm run build
+
+  # 检索质量回归门禁：改检索 / 重排 / 提示词导致指标跌破基线则失败
+  # 不需要 API Key（--skip-generation），走内存索引，结果确定
+  eval-regression:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-bge-small-zh-v1.5
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run retrieval regression gate
+        run: python -m evaluation.check_regression --tol 0.02
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: |
+            backend/eval_report.json
+            backend/evaluation/baseline_retrieval.json
+          if-no-files-found: warn
