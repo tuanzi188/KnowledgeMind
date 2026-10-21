@@ -93,7 +93,7 @@ async def _restore_vector_store_from_bm25_index(bm25_searcher_instance):
 
 async def _rebuild_index_bm25(bm25_searcher_instance) -> bool:
     """从向量库流式读取 chunks 并重建 BM25 索引。返回是否有数据。"""
-    bm25_docs: List[Dict[str, Any]] = []
+    bm25_docs: list[dict] = []
     async for chunk in vector_store.list_chunks_stream():
         bm25_docs.append({
             "chunk_id": chunk.get("chunk_id", ""),

@@ -3,7 +3,6 @@ import re
 import hashlib
 import logging
 import tempfile
-import atexit
 from pathlib import Path
 from typing import Optional
 

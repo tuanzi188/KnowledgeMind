@@ -1,7 +1,6 @@
 import re
 import asyncio
 import logging
-from collections import Counter
 from typing import List, Optional
 
 from app.config import RERANK_CONFIG
@@ -57,8 +56,7 @@ class Reranker:
     async def warmup(self):
         try:
             from transformers import AutoTokenizer, AutoModelForSequenceClassification
-            import torch
-            
+
             logger.info("Warming up BGE Reranker model...")
             
             # Try loading from cache first (fast)
@@ -208,7 +206,6 @@ class Reranker:
         if not self._model_loaded:
             try:
                 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-                import torch
                 try:
                     # 先只读本地缓存：无外网时 HF 的版本检查会直接抛连接错误，
                     # 即使权重已缓存齐全也加载失败（实测 WinError 10060，

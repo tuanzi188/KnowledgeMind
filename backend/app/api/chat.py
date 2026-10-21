@@ -9,7 +9,7 @@ from app.models.chat import (
     ChatRequest, ChatResponse, SearchRequest, SearchResponse,
     ConversationListResponse, ConversationDetail, ConversationDeleteResponse
 )
-from app.core.user_context import extract_user_context, UserContext
+from app.core.user_context import extract_user_context
 from app.core.conversation_scope import ConversationNamespace
 from app.core.exceptions import UpstreamAPIError
 from app.services.rag_engine import rag_query, rag_query_stream

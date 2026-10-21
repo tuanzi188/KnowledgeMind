@@ -5,11 +5,11 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
-from typing import Optional, List
+from typing import Optional
 
 from app.config import DATA_DIR, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOAD_SIZE_MB
-from app.core.user_context import extract_user_context, UserContext
-from app.models.chat import DocumentUploadResponse, ChunkingStrategy, DocumentChunk, DocumentInfo
+from app.core.user_context import extract_user_context
+from app.models.chat import DocumentUploadResponse, ChunkingStrategy, DocumentChunk
 from app.services.document_parser import parse_document, SUPPORTED_EXTENSIONS
 from app.services.chunker import ChunkingPipeline
 from app.services.vector_store import vector_store
@@ -21,7 +21,6 @@ from app.services.hybrid_search import clear_retrieval_cache
 from app.services.rag_engine import clear_query_caches
 from app.services.audit_logger import audit_logger, AuditAction, AuditStatus, AuditEvent
 from app.services.access_control import (
-    can_access,
     can_manage,
     filter_accessible_records,
     build_acl_metadata,

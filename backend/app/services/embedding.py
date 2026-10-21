@@ -1,6 +1,6 @@
 import hashlib
 import logging
-from typing import List, Optional
+from typing import Optional
 
 import numpy as np
 
@@ -207,11 +207,3 @@ def init_embedding(pipeline_dir: str = "", dim: int = 384):
         cache_dir=embedding_cache_dir,
         fallback_dimension=fallback_dimension,
     )
-
-
-async def fit_on_corpus(texts: list[str]):
-    return None
-
-
-async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    return get_embedding().embed(texts)

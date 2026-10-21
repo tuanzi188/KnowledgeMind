@@ -214,7 +214,6 @@ class DataAggregator:
                     logger.warning("pandas binning failed: %s", e)
 
         values.sort()
-        n = len(values)
         min_v, max_v = values[0], values[-1]
         step = (max_v - min_v) / bins if max_v > min_v else 1
         result = []

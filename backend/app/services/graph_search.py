@@ -77,7 +77,6 @@ class GraphSearcher:
     ) -> List[dict]:
         results = []
         try:
-            from neo4j import GraphDatabase
 
             entities = self._extract_entities(query)
             if not entities:

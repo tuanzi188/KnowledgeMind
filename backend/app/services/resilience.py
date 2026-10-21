@@ -9,7 +9,7 @@ import logging
 import random
 import time
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +59,13 @@ class CircuitBreaker:
         old_state = self._state
         self._state = new_state
         if new_state == CircuitState.OPEN:
-            logger.warning("[%s] 熔断器打开 (OPEN) — 连续失败 %s 次", self.name, self._failure_count)
+            logger.warning(
+                "[%s] 熔断器 %s → OPEN — 连续失败 %s 次", self.name, old_state, self._failure_count
+            )
         elif new_state == CircuitState.HALF_OPEN:
-            logger.info("[%s] 熔断器半开 (HALF_OPEN) — 试探性恢复", self.name)
+            logger.info("[%s] 熔断器 %s → HALF_OPEN — 试探性恢复", self.name, old_state)
         elif new_state == CircuitState.CLOSED:
-            logger.info("[%s] 熔断器关闭 (CLOSED) — 已恢复", self.name)
+            logger.info("[%s] 熔断器 %s → CLOSED — 已恢复", self.name, old_state)
             self._failure_count = 0
 
     def _should_attempt_recovery(self) -> bool:

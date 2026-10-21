@@ -25,20 +25,6 @@ class DocumentChunk(BaseModel):
     sparse_embedding: Optional[Dict[str, float]] = None
 
 
-class RetrievalResult(BaseModel):
-    chunk_id: str
-    doc_id: str
-    content: str
-    metadata: Dict[str, Any] = {}
-    score: float = 0.0
-    source: str = "vector"
-
-
-class Message(BaseModel):
-    role: str = Field(..., pattern="^(user|assistant|system)$")
-    content: str
-
-
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=10000, description="用户问题")
     conversation_id: Optional[str] = None
@@ -123,19 +109,6 @@ class SearchResponse(BaseModel):
     results: List[SearchResult]
     total: int
     query: str
-
-
-class FeedbackRequest(BaseModel):
-    conversation_id: str
-    message_index: int
-    feedback_type: str = Field(..., pattern="^(thumbs_up|thumbs_down)$")
-    detail: Optional[str] = None
-
-
-class ErrorResponse(BaseModel):
-    error_code: str
-    message: str
-    detail: Optional[str] = None
 
 
 class ConversationTurn(BaseModel):

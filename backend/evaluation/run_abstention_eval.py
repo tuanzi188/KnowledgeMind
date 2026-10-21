@@ -17,7 +17,6 @@ import argparse
 import asyncio
 import csv
 import json
-import os
 import shutil
 import sys
 import tempfile

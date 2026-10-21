@@ -1,9 +1,6 @@
 import re
-import uuid
-import math
 import hashlib
 from typing import List, Optional
-from dataclasses import dataclass
 
 from app.models.chat import DocumentChunk, ChunkingStrategy
 
