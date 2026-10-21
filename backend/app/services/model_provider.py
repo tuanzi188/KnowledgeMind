@@ -1,35 +1,17 @@
 import logging
 from typing import Optional, List, AsyncIterator
 
-from app.config import MODEL_MODE, MODEL_PROVIDER
+from app.config import MODEL_PROVIDER
 from app.services.deepseek import deepseek_client
 from app.services.qwen_client import qwen_client
-from app.services.ollama_client import ollama_client
 
 logger = logging.getLogger(__name__)
 
 
 def _resolve_provider():
-    normalized_mode = (MODEL_MODE or "api").strip().lower()
-    if normalized_mode in {"ollama", "local"}:
-        return ollama_client
     if MODEL_PROVIDER == "qwen":
         return qwen_client
     return deepseek_client
-
-
-def _resolve_reasoning_mode(reasoning_mode: str) -> str:
-    normalized_mode = (MODEL_MODE or "deepseek").strip().lower()
-    if normalized_mode in {"ollama", "local"}:
-        mode_mapping = {
-            "flash": "non_think",
-            "pro": "think_high",
-            "think_high": "think_high",
-            "think_max": "think_max",
-            "non_think": "non_think",
-        }
-        return mode_mapping.get(reasoning_mode, "think_high")
-    return reasoning_mode
 
 
 async def chat(
@@ -39,8 +21,7 @@ async def chat(
     max_tokens: Optional[int] = None,
 ) -> tuple[str, Optional[str], dict]:
     provider_instance = _resolve_provider()
-    normalized_reasoning_mode = _resolve_reasoning_mode(reasoning_mode)
-    return await provider_instance.chat(messages, normalized_reasoning_mode, temperature, max_tokens)
+    return await provider_instance.chat(messages, reasoning_mode, temperature, max_tokens)
 
 
 async def chat_stream(
@@ -51,10 +32,9 @@ async def chat_stream(
     result_holder: Optional[dict] = None,
 ) -> AsyncIterator[str]:
     provider_instance = _resolve_provider()
-    normalized_reasoning_mode = _resolve_reasoning_mode(reasoning_mode)
     async for token in provider_instance.chat_stream(
         messages,
-        normalized_reasoning_mode,
+        reasoning_mode,
         temperature,
         max_tokens,
         result_holder=result_holder,
@@ -83,8 +63,7 @@ async def rag_query(
     query: str, context: str, reasoning_mode: str = "pro"
 ) -> tuple[str, Optional[str], dict]:
     provider_instance = _resolve_provider()
-    normalized_reasoning_mode = _resolve_reasoning_mode(reasoning_mode)
-    return await provider_instance.rag_query(query, context, normalized_reasoning_mode)
+    return await provider_instance.rag_query(query, context, reasoning_mode)
 
 
 async def rag_query_stream(
@@ -94,11 +73,10 @@ async def rag_query_stream(
     result_holder: Optional[dict] = None,
 ) -> AsyncIterator[str]:
     provider_instance = _resolve_provider()
-    normalized_reasoning_mode = _resolve_reasoning_mode(reasoning_mode)
     async for token in provider_instance.rag_query_stream(
         query,
         context,
-        normalized_reasoning_mode,
+        reasoning_mode,
         result_holder=result_holder,
     ):
         yield token
@@ -119,13 +97,4 @@ async def rewrite_query(query: str) -> List[str]:
 
 def select_reasoning_mode(intent: dict) -> str:
     provider_instance = _resolve_provider()
-    provider_selected_mode = provider_instance.select_reasoning_mode(intent)
-    normalized_mode = (MODEL_MODE or "deepseek").strip().lower()
-    if normalized_mode in {"ollama", "local"}:
-        reverse_mode_mapping = {
-            "non_think": "flash",
-            "think_high": "pro",
-            "think_max": "pro",
-        }
-        return reverse_mode_mapping.get(provider_selected_mode, "pro")
-    return provider_selected_mode
+    return provider_instance.select_reasoning_mode(intent)

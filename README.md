@@ -26,10 +26,10 @@ KnowledgeMind 当前定位为可扩展的 RAG 智能知识库应用原型，主�
 |------|------|
 | **多格式文档解析** | 支持 12 种格式：PDF / Word / Excel / PPT / Markdown / TXT / CSV，以及 PNG / JPG / JPEG / BMP / GIF 五类图片。图片默认只登记元数据；扫描件 OCR 为可选能力，需安装 `requirements-optional.txt` 并显式开启 |
 | **多路混合检索** | 向量检索（ChromaDB）+ 关键词检索（BM25），RRF 融合 |
-| **智能重排序** | 默认 Cross-Encoder 精排（l2）；仅「综合分析 / 对比分析」两类查询走 LLM 重排（l3）；l1 规则重排只作为 Cross-Encoder 不可用时的兜底 |
+| **智能重排序** | L2 精排优先调用托管重排（阿里云百炼 qwen3.7-text-rerank）；未配置 key 或调用失败时降级到本地 Cross-Encoder（BAAI/bge-reranker-base），再降级到 l1 规则重排。仅「综合分析 / 对比分析」两类查询走 LLM 重排（l3） |
 | **流式对话** | SSE 流式输出，打字机效果，用户体验流畅 |
 | **多轮会话记忆** | 会话持久化（Redis 可选，默认 JSON 落盘），支持上下文连续对话 |
-| **多模型支持** | DeepSeek / 阿里云百炼 / Ollama 本地模型，一键切换 |
+| **多模型支持** | DeepSeek / 阿里云百炼，按配置切换 |
 | **置信度评估** | 自动评估回答可信度，透明展示知识来源 |
 | **引用追溯** | 每条回答精确标注引用片段，支持原文查看 |
 | **Docker Compose 开发部署** | 提供前端、后端和 Redis 的容器化启动配置；该链路未在本机验证，使用前请先跑通一次上传 |
@@ -56,7 +56,6 @@ graph TB
     subgraph AI 模型
         I[DeepSeek API]
         J[阿里云百炼]
-        K[Ollama 本地]
     end
 
     subgraph 文档处理
@@ -72,7 +71,6 @@ graph TB
     D --> G
     D --> I
     D --> J
-    D --> K
     L --> M
     M --> N
     N --> E
@@ -119,6 +117,7 @@ sequenceDiagram
 | **向量数据库** | ChromaDB | 轻量嵌入、零配置、适合中小规模 |
 | **缓存** | Redis 7 | 会话持久化 |
 | **LLM 提供商** | DeepSeek API | 高性价比、中文能力强 |
+| **重排模型** | qwen3.7-text-rerank / BAAI-bge-reranker-base | 托管优先、本地兜底，按可用性自动降级 |
 | **嵌入模型** | BGE-small-zh-v1.5 | 中文语义匹配 SOTA |
 | **容器化** | Docker + docker-compose | 方便本地开发、环境复现和功能验证 |
 
@@ -131,7 +130,8 @@ sequenceDiagram
 - Python 3.10+
 - Node.js 18+
 - Redis 7+（可选，用于会话持久化）
-- DeepSeek API Key（或 Ollama 本地模型）
+- DeepSeek API Key（或阿里云百炼 API Key）
+- 阿里云百炼 API Key（可选，仅用于托管重排；不配则走本地 Cross-Encoder）
 
 ### 1. 克隆项目
 
@@ -281,7 +281,7 @@ MIT
 - 旧版本曾将部分数据写到仓库父目录。升级前停止服务，备份旧目录，并手动迁移到新的 `data/`；不要直接覆盖已有数据。也可临时将 `DATA_DIR` 指向旧目录。
 - Redis 仅在容器网络内使用，不再向宿主机公开 6379 端口。
 - `frontend/index.html` 加载 React 入口，构建产物在 `frontend/dist/`。
-- 无外部模型凭据时可以运行单元测试；实际文档问答仍需可用的模型 API 或本地 Ollama。
+- 无外部模型凭据时可以运行单元测试；实际文档问答仍需可用的模型 API。
 
 ## 开发验证
 

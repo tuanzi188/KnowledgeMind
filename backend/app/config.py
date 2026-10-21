@@ -14,8 +14,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))).expanduser().resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL_MODE = os.getenv("MODEL_MODE", "api")
-
 # 模型提供商选择: deepseek / qwen
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "deepseek").strip().lower()
 
@@ -72,14 +70,6 @@ QWEN_MODEL_CONFIG: Dict[str, Any] = {
     },
 }
 
-OLLAMA_CONFIG: Dict[str, Any] = {
-    "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
-    "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "qwen2.5:7b-instruct"),
-    "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"),
-    "max_tokens": int(os.getenv("OLLAMA_MAX_TOKENS", 4096)),
-    "temperature": float(os.getenv("OLLAMA_TEMPERATURE", 0.1)),
-}
-
 EMBEDDING_CONFIG: Dict[str, Any] = {
     "model_name": os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5"),
     "device": os.getenv("EMBEDDING_DEVICE", "auto"),
@@ -93,6 +83,18 @@ VECTOR_STORE_CONFIG: Dict[str, Any] = {
     "persist_dir": str(DATA_DIR / "chroma_db"),
     "collection_name": "knowledge_mind",
     "embedding_dimension": int(os.getenv("VECTOR_EMBEDDING_DIMENSION", 512)),
+}
+
+# L2 精排：优先调用托管重排（默认阿里云百炼 qwen3.7-text-rerank），
+# 未配置 key、超时或接口异常时降级到本地 Cross-Encoder（BAAI/bge-reranker-base）。
+RERANK_CONFIG: Dict[str, Any] = {
+    "api_base_url": os.getenv(
+        "RERANK_BASE_URL", "https://dashscope.aliyuncs.com/compatible-api/v1/reranks"
+    ),
+    "api_model": os.getenv("RERANK_MODEL", "qwen3.7-text-rerank"),
+    "api_key": secrets_manager.get("RERANK_API_KEY") or secrets_manager.get("ALI_API_KEY"),
+    "timeout_seconds": float(os.getenv("RERANK_TIMEOUT_SECONDS", "10")),
+    "max_doc_chars": int(os.getenv("RERANK_MAX_DOC_CHARS", "600")),
 }
 
 RETRIEVAL_CONFIG: Dict[str, Any] = {
@@ -123,11 +125,10 @@ TOKENIZER_CONFIG: Dict[str, Any] = {
 }
 
 _required_secrets = []
-if MODEL_MODE == "api":
-    if MODEL_PROVIDER == "qwen":
-        _required_secrets.append("QWEN_API_KEY")
-    else:
-        _required_secrets.append("DS_API_KEY")
+if MODEL_PROVIDER == "qwen":
+    _required_secrets.append("QWEN_API_KEY")
+else:
+    _required_secrets.append("DS_API_KEY")
 missing = secrets_manager.validate_required_secrets(_required_secrets)
 if missing:
     logger.warning(

@@ -4,6 +4,9 @@ import logging
 from collections import Counter
 from typing import List, Optional
 
+from app.config import RERANK_CONFIG
+from app.services import rerank_api
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,11 +125,50 @@ class Reranker:
         if strategy == "l1":
             return self._heuristic_rerank(query, candidates, top_k)
         elif strategy == "l2":
-            return await self._cross_encoder_rerank(query, candidates, top_k)
+            return await self._l2_rerank(query, candidates, top_k)
         elif strategy == "l3":
             return await self._deepseek_rerank(query, candidates, top_k)
         else:
             return self._heuristic_rerank(query, candidates, top_k)
+
+    async def _l2_rerank(self, query: str, candidates: List[dict], top_k: int) -> List[dict]:
+        """L2 精排：优先托管重排，失败降级到本地 Cross-Encoder，再降到 L1 规则。"""
+        remote = await self._remote_rerank(query, candidates, top_k)
+        if remote is not None:
+            return remote
+        return await self._cross_encoder_rerank(query, candidates, top_k)
+
+    async def _remote_rerank(
+        self, query: str, candidates: List[dict], top_k: int
+    ) -> Optional[List[dict]]:
+        """调用托管重排（默认 qwen3.7-text-rerank）。未配置或失败返回 None。"""
+        if not rerank_api.is_configured():
+            return None
+
+        max_chars = int(RERANK_CONFIG.get("max_doc_chars") or 600)
+        documents = []
+        for c in candidates:
+            title = (c.get("metadata") or {}).get("title") or ""
+            content = (c.get("content") or "")[:max_chars]
+            # 标题对 snippet 类内容影响很大，拼在正文前一起送排
+            documents.append(f"{title}\n{content}" if title else content)
+
+        scored = await rerank_api.remote_rerank(query, documents, top_k)
+        if scored is None:
+            return None
+
+        score_map = {index: score for index, score in scored}
+        for i, c in enumerate(candidates):
+            if i in score_map:
+                c["rerank_score"] = score_map[i]
+                c["rerank_level"] = "L2-remote"
+            else:
+                # 未进 top_n 的候选排在命中项之后
+                c["rerank_score"] = 0.0
+                c["rerank_level"] = "L2-remote-miss"
+
+        candidates.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
+        return candidates[:top_k]
 
     def _heuristic_rerank(self, query: str, candidates: List[dict], top_k: int) -> List[dict]:
         query_tokens = set(self._tokenize(query))
@@ -167,12 +209,23 @@ class Reranker:
             try:
                 from transformers import AutoTokenizer, AutoModelForSequenceClassification
                 import torch
-                self._reranker_tokenizer = AutoTokenizer.from_pretrained(
-                    "BAAI/bge-reranker-base"
-                )
-                self._reranker_model = AutoModelForSequenceClassification.from_pretrained(
-                    "BAAI/bge-reranker-base"
-                )
+                try:
+                    # 先只读本地缓存：无外网时 HF 的版本检查会直接抛连接错误，
+                    # 即使权重已缓存齐全也加载失败（实测 WinError 10060，
+                    # 结果 L2 一直静默降级到 L1）。缓存缺失时才允许联网下载一次。
+                    self._reranker_tokenizer = AutoTokenizer.from_pretrained(
+                        "BAAI/bge-reranker-base", local_files_only=True
+                    )
+                    self._reranker_model = AutoModelForSequenceClassification.from_pretrained(
+                        "BAAI/bge-reranker-base", local_files_only=True
+                    )
+                except Exception:
+                    self._reranker_tokenizer = AutoTokenizer.from_pretrained(
+                        "BAAI/bge-reranker-base"
+                    )
+                    self._reranker_model = AutoModelForSequenceClassification.from_pretrained(
+                        "BAAI/bge-reranker-base"
+                    )
                 self._reranker_model.eval()
                 self._model_loaded = True
                 logger.info("BGE Reranker model loaded")
@@ -230,11 +283,11 @@ class Reranker:
                 c["rerank_level"] = "L3-fallback"
 
         except Exception as e:
-            logger.error("DeepSeek rerank failed: %s, falling back to L2 Cross-Encoder", e)
+            logger.error("DeepSeek rerank failed: %s, falling back to L2", e)
             try:
-                return await self._cross_encoder_rerank(query, candidates, top_k)
+                return await self._l2_rerank(query, candidates, top_k)
             except Exception as e2:
-                logger.error("Cross-Encoder fallback also failed: %s, using L1 heuristic", e2)
+                logger.error("L2 rerank fallback also failed: %s, using L1 heuristic", e2)
                 return self._heuristic_rerank(query, candidates, top_k)
 
         candidates.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)

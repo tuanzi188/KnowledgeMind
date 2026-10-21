@@ -16,7 +16,7 @@ from app.core.logging_context import (
     generate_trace_id,
 )
 
-from app.config import SERVER_CONFIG, MODEL_MODE, MODEL_PROVIDER, API_KEY
+from app.config import SERVER_CONFIG, MODEL_PROVIDER, API_KEY
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
 from app.api.analytics import router as analytics_router
@@ -303,8 +303,6 @@ async def deep_health_check():
     深度健康检查（Harness 韧性工程）
     检查所有依赖组件的可用性，包括熔断器状态
     """
-    import httpx
-
     checks = {}
     overall_healthy = True
 
@@ -350,45 +348,28 @@ async def deep_health_check():
             overall_healthy = False
 
     # 5. 模型 API 配置检查（不调用 models.list，避免依赖远程接口）
-    if MODEL_MODE == "api":
-        try:
-            if MODEL_PROVIDER == "qwen":
-                from app.services.qwen_client import qwen_client as api_client
-                provider_label = "qwen"
-            else:
-                from app.services.deepseek import deepseek_client as api_client
-                provider_label = "deepseek"
-            if api_client.clients:
-                checks[f"{provider_label}_api"] = {
-                    "status": "healthy",
-                    "provider": "primary",
-                    "client_count": len(api_client.clients),
-                }
-            else:
-                checks[f"{provider_label}_api"] = {"status": "unhealthy", "error": "No API client configured"}
-                overall_healthy = False
-        except Exception as e:
-            checks[f"{provider_label}_api"] = {"status": "unhealthy", "error": str(e)[:200]}
+    provider_label = "qwen" if MODEL_PROVIDER == "qwen" else "deepseek"
+    try:
+        if MODEL_PROVIDER == "qwen":
+            from app.services.qwen_client import qwen_client as api_client
+        else:
+            from app.services.deepseek import deepseek_client as api_client
+        if api_client.clients:
+            checks[f"{provider_label}_api"] = {
+                "status": "healthy",
+                "provider": "primary",
+                "client_count": len(api_client.clients),
+            }
+        else:
+            checks[f"{provider_label}_api"] = {"status": "unhealthy", "error": "No API client configured"}
             overall_healthy = False
+    except Exception as e:
+        checks[f"{provider_label}_api"] = {"status": "unhealthy", "error": str(e)[:200]}
+        overall_healthy = False
 
-    # 6. Ollama 连通性（仅 local 模式）
-    if MODEL_MODE in ("ollama", "local"):
-        try:
-            from app.config import OLLAMA_CONFIG
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"{OLLAMA_CONFIG['base_url']}/models")
-                if resp.status_code == 200:
-                    models = resp.json()
-                    checks["ollama_api"] = {
-                        "status": "healthy",
-                        "model_count": len(models.get("data", [])),
-                    }
-                else:
-                    checks["ollama_api"] = {"status": "unhealthy", "http_status": resp.status_code}
-                    overall_healthy = False
-        except Exception as e:
-            checks["ollama_api"] = {"status": "unhealthy", "error": str(e)[:200]}
-            overall_healthy = False
+    # 6. 重排档位（托管 qwen3.7-text-rerank / 本地 Cross-Encoder）
+    from app.services import rerank_api
+    checks["rerank"] = rerank_api.describe()
 
     # 7. 任务队列状态
     try:
@@ -414,7 +395,6 @@ async def deep_health_check():
         "status": "healthy" if overall_healthy else "degraded",
         "service": "KnowledgeMind RAG API",
         "version": "1.1.0",
-        "model_mode": MODEL_MODE,
         "timestamp": datetime.now().isoformat(),
         "checks": checks,
     }

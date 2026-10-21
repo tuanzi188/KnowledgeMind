@@ -119,7 +119,16 @@ class SentenceTransformerEmbedding:
             if self.cache_dir:
                 model_kwargs["cache_folder"] = self.cache_dir
 
-            self._model = SentenceTransformer(self.model_name, **model_kwargs)
+            try:
+                # 先只读本地缓存：无外网时 HF 会对每个配置文件做 HEAD 检查并退避重试
+                # （实测 adapter/processor/preprocessor 各 5 次，单次十几秒），
+                # 明明缓存齐全也要卡好几分钟。缓存缺失时才允许联网下载一次。
+                self._model = SentenceTransformer(
+                    self.model_name, local_files_only=True, **model_kwargs
+                )
+            except Exception:
+                self._model = SentenceTransformer(self.model_name, **model_kwargs)
+
             loaded_dimension = self._model.get_sentence_embedding_dimension()
             if isinstance(loaded_dimension, int) and loaded_dimension > 0:
                 self._dimension = loaded_dimension

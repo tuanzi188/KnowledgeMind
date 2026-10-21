@@ -13,7 +13,7 @@ _BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.config import MODEL_MODE, MODEL_PROVIDER, VECTOR_STORE_CONFIG
+from app.config import MODEL_PROVIDER, VECTOR_STORE_CONFIG
 from app.models.chat import DocumentChunk
 from app.services.embedding import get_embedding
 from app.services.keyword_search import BM25Searcher, get_bm25_searcher
@@ -23,6 +23,7 @@ from app.services.reranker import reranker
 from app.services.hybrid_search import HybridRetriever, hybrid_retriever, clear_retrieval_cache
 from app.services.model_provider import rag_query as model_rag_query
 from app.services.model_provider import simple_query as model_simple_query
+from app.services import rerank_api
 
 from evaluation.metrics import mrr_at_k, ndcg_at_k, recall_at_k
 from evaluation.sample_data import CORPUS, QA_PAIRS
@@ -145,9 +146,6 @@ async def _real_pipeline_search(query, query_type, top_k, rerank_strategy):
 # 生成评测（LLM-as-Judge）
 # --------------------------------------------------------------------------
 def _has_llm():
-    mode = (MODEL_MODE or "").strip().lower()
-    if mode in {"ollama", "local"}:
-        return True
     try:
         if MODEL_PROVIDER == "qwen":
             from app.services.qwen_client import qwen_client
@@ -208,9 +206,11 @@ def _metric_block(retrieved_ids, relevant_ids, k_max=5):
     }
 
 
-def _print_report(rows, top_k, use_generation, embedding, pipeline, rerank_strategy):
+def _print_report(rows, top_k, use_generation, embedding, pipeline, rerank_strategy, rerank_backend=None):
     print(f"\n=== 效果评测报告 (top_k={top_k}, pipeline={pipeline}, rerank={rerank_strategy}) ===")
     print(f"语料 {len(CORPUS)} 个 chunk，问答 {len(rows)} 条，embedding={embedding.version_tag}")
+    if rerank_backend:
+        print(f"重排后端：{rerank_backend.get('mode')} / {rerank_backend.get('model')}")
 
     header = ["query_type", "query", "retrieved@3召回", "最终@1", "最终@3", "最终@5", "最终mrr@5", "最终ndcg@5"]
     if use_generation:
@@ -271,6 +271,7 @@ def _print_report(rows, top_k, use_generation, embedding, pipeline, rerank_strat
             "embedding": embedding.version_tag,
             "pipeline": pipeline,
             "rerank_strategy": rerank_strategy,
+            "rerank_backend": rerank_backend,
             "corpus_chunks": len(CORPUS),
             "queries": len(rows),
             "summary": {
@@ -370,7 +371,15 @@ async def run(top_k, skip_generation, pipeline, rerank_strategy):
                 row["answer"] = answer[:120]
             rows.append(row)
 
-        _print_report(rows, top_k, use_generation, embedding, pipeline, rerank_strategy)
+        _print_report(
+            rows,
+            top_k,
+            use_generation,
+            embedding,
+            pipeline,
+            rerank_strategy,
+            rerank_api.describe() if rerank_strategy == "l2" else None,
+        )
     finally:
         if tmp_root is not None:
             shutil.rmtree(tmp_root, ignore_errors=True)
